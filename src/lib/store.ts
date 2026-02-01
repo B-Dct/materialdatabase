@@ -464,7 +464,9 @@ export const useAppStore = create<AppState>()(
                 });
 
                 if (check.isUsed) {
-                    set({ error: `Cannot delete material: Used in ${check.usages.length} dependent items (${check.usages[0]}, ...)` });
+                    const errorMsg = `Cannot delete material: Used in ${check.usages.length} dependent items (${check.usages[0]}${check.usages.length > 1 ? ', ...' : ''})`;
+                    set({ error: errorMsg });
+                    throw new Error(errorMsg);
                     return;
                 }
 
@@ -477,6 +479,7 @@ export const useAppStore = create<AppState>()(
                     }));
                 } catch (e: any) {
                     set({ error: e.message });
+                    throw e;
                 } finally {
                     set({ isLoading: false });
                 }

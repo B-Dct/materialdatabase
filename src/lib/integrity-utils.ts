@@ -12,8 +12,16 @@ export function checkTraceability(
 
     // Check usage in Layups
     if (type === 'material') {
+        // 1. Find all variants for this material
+        const targetMaterial = database.materials.find(m => m.id === targetId);
+        const variantIds = targetMaterial?.variants?.map(v => v.id) || [];
+
+        // Add the material ID itself just in case legacy data uses it directly
+        const idsToCheck = [targetId, ...variantIds];
+
         database.layups.forEach(l => {
-            if (l.layers.some(layer => layer.materialVariantId === targetId || layer.materialVariantId.startsWith(targetId))) {
+            // Check if ANY layer uses ANY of the variant IDs
+            if (l.layers.some(layer => idsToCheck.includes(layer.materialVariantId))) {
                 usages.push(`Layup: ${l.name} (${l.status})`);
             }
         });
@@ -22,9 +30,9 @@ export function checkTraceability(
     // Check usage in Assemblies
     // (Assuming Assemblies use Layups or Materials directly)
     database.assemblies.forEach(a => {
+        // Assemblies might use components that are materials directly
         const isUsed = a.components.some(c => c.componentId === targetId);
-        // Also check indirect usage if deleting a material used in a layup that is used in an assembly?
-        // For MVP, direct usage check.
+
         if (isUsed) {
             usages.push(`Assembly: ${a.name} (${a.status})`);
         }

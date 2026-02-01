@@ -155,15 +155,25 @@ export function PropertyRegistry() {
                             variant="ghost"
                             size="icon"
                             className="text-destructive hover:text-destructive"
-                            onClick={() => {
+                            onClick={async () => {
                                 if (window.confirm(`Are you sure you want to delete "${row.original.name}"? This cannot be undone.`)) {
-                                    deleteProperty(row.original.id);
+                                    try {
+                                        await deleteProperty(row.original.id);
+                                    } catch (e: any) {
+                                        console.error("Failed to delete property:", e);
+                                        // Check for Supabase FK violation code (23503) or generic message
+                                        if (e.message?.includes("foreign key") || e.code === "23503" || e.message?.includes("violate")) {
+                                            alert(`Cannot delete "${row.original.name}" because it is currently in use by Measurements or Test Methods.\n\nPlease remove it from those items first.`);
+                                        } else {
+                                            alert(`Failed to delete property: ${e.message}`);
+                                        }
+                                    }
                                 }
                             }}
                         >
                             <Trash className="h-4 w-4" />
                         </Button>
-                    </div>
+                    </div >
                 ) : null
             },
         },

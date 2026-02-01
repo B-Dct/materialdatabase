@@ -1,0 +1,1 @@
+const { createClient } = require('@supabase/supabase-js'); require('dotenv').config(); const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY); async function listProps() { const { data } = await supabase.from('property_definitions').select('name, id'); console.log(JSON.stringify(data, null, 2)); } listProps();

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutGrid, Box, FileText, ArrowLeft, Pencil, Save, X as XIcon, Trash2 } from 'lucide-react';
+import { LayoutGrid, Box, FileText, ArrowLeft, Pencil, Save, X as XIcon, Trash2, Archive } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MaterialPropertiesView } from './MaterialPropertiesView';
 import { MaterialSpecifications } from './MaterialSpecifications';
@@ -45,6 +45,7 @@ export function MaterialDetailPage() {
 
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState<Partial<Material>>({});
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (materials.length === 0) fetchMaterials();
@@ -99,10 +100,41 @@ export function MaterialDetailPage() {
 
     const handleDelete = async () => {
         if (!material.id) return;
-        await deleteMaterial(material.id);
-        navigate('/materials');
+        try {
+            setError(null);
+            await deleteMaterial(material.id);
+            navigate('/materials');
+        } catch (e: any) {
+            const msg = e.message || "Failed to delete material";
+            if (msg.includes("Cannot delete material: Used in")) {
+                setError(msg + "\n\nTip: You can set the status to 'Obsolete' to archive it instead.");
+            } else {
+                setError(msg);
+            }
+        }
     };
 
+    const handleArchive = async () => {
+        if (confirm("Are you sure you want to archive this material? It will be marked as Obsolete.")) {
+            handleChange('status', 'obsolete');
+            // We need to save this change immediately to persist it
+            // However, handleSave uses formData, so updating formData above works, but we need to trigger save.
+            // But handleSave might validate other fields.
+            // Let's just set it in formData and users can click Save, OR we do it nicely.
+            // UI Pattern: The button assumes immediate action?
+            // "Archive" usually implies an action.
+            // Let's save immediately.
+            try {
+                if (material.id) {
+                    await updateMaterial(material.id, { status: 'obsolete' });
+                    setFormData(prev => ({ ...prev, status: 'obsolete' }));
+                    // Refresh? Store updates automatically.
+                }
+            } catch (e) {
+                console.error("Archive failed", e);
+            }
+        }
+    };
     const handleChange = (field: keyof Material, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
@@ -151,15 +183,47 @@ export function MaterialDetailPage() {
                                             This action cannot be undone. This will permanently delete the material
                                             <strong> {material.name}</strong> and all associated data.
                                         </AlertDialogDescription>
+                                        {error && (
+                                            <div className="mt-2 p-3 bg-red-100 border border-red-200 text-red-700 rounded text-sm whitespace-pre-wrap">
+                                                {error}
+                                            </div>
+                                        )}
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
+                                        <AlertDialogCancel onClick={() => setError(null)}>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                handleDelete();
+                                            }}
+                                            className="bg-destructive hover:bg-destructive/90"
+                                        >
                                             Delete Material
                                         </AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
+
+                            {/* Archive Button */}
+                            {formData.status !== 'obsolete' && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        // If we want it to be part of "Save", we just change state. 
+                                        // But "Archive" feels like an action.
+                                        // Let's implement handlesArchive which saves immediately?
+                                        // Or just sets the status dropdown to obsolete?
+                                        // Simpler: Set status to obsolete in formData and show toast/alert "Status set to obsolete, click Save".
+                                        // User Experience: "Archive" button should probably just do it.
+                                        // I'll stick to my handleArchive implementation above.
+                                        handleArchive();
+                                    }}
+                                >
+                                    <Archive className="h-4 w-4 mr-2" /> Archive
+                                </Button>
+                            )}
+
                             <Button variant="outline" size="sm" onClick={handleCancel}>
                                 <XIcon className="h-4 w-4 mr-2" /> Cancel
                             </Button>

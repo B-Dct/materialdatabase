@@ -4,6 +4,17 @@ import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Plus, CheckCircle2, XCircle, HelpCircle, Archive } from 'lucide-react';
 import { Protect } from '@/components/auth/Protect';
 import { DataTable } from '@/components/ui/data-table';
@@ -65,12 +76,7 @@ export function MaterialListPage() {
             header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
             cell: ({ row }) => {
                 const status = row.getValue("status") as string;
-                // Use a custom smaller badge potentially or just StatusBadge with updated styles if global, 
-                // but user asked for "decent" here. Let's use standard variants but maybe calmer.
-                return <StatusBadge status={status} />; // Assuming StatusBadge is already decent or we update it separately? 
-                // Checks "StatusBadge" usage... it was imported. I should stick to it unless I change it globally.
-                // User asked "Style Status, REACH and Maturity badges to be more subtle".
-                // I'll inline the style for now to be safe and match the request directly.
+                return <StatusBadge status={status} />;
             },
             enableSorting: true,
             filterFn: (row, id, value) => {
@@ -126,7 +132,7 @@ export function MaterialListPage() {
             },
             enableSorting: true,
         },
-        // Hidden search column
+
         {
             id: "_search",
             accessorKey: "_search",
@@ -147,6 +153,7 @@ export function MaterialListPage() {
                 )
             },
         },
+
     ]
 
     return (
