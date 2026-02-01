@@ -1,16 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
-import { Plus, ChevronRight } from 'lucide-react';
+import { Plus, ChevronRight, Edit } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { RequirementProfileDialog } from './RequirementEditorDialog'; // Unified Dialog
 import {
     Table,
     TableBody,
@@ -21,29 +14,31 @@ import {
 } from "@/components/ui/table";
 
 export function RequirementProfileListPage() {
-    const { requirementProfiles, fetchRequirementProfiles, addRequirementProfile } = useAppStore();
+    const { requirementProfiles, fetchRequirementProfiles, addRequirementProfile, updateRequirementProfile } = useAppStore();
     const navigate = useNavigate();
     const [createOpen, setCreateOpen] = useState(false);
 
-    // Create Form State
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
+    // Edit State
+    const [editOpen, setEditOpen] = useState(false);
+    const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchRequirementProfiles();
     }, [fetchRequirementProfiles]);
 
-    const handleCreate = async () => {
-        if (!name) return;
-
+    const handleCreate = async (profileData: any) => {
         await addRequirementProfile({
-            name,
-            description,
-            rules: []
+            ...profileData,
+            rules: profileData.rules || []
         });
         setCreateOpen(false);
-        setName('');
-        setDescription('');
+    };
+
+    const handleUpdate = async (profileData: any) => {
+        if (editingProfileId) {
+            await updateRequirementProfile(editingProfileId, profileData);
+        }
+        setEditOpen(false);
     };
 
     return (
@@ -53,30 +48,24 @@ export function RequirementProfileListPage() {
                     <h1 className="text-3xl font-bold tracking-tight">Standards</h1>
                     <p className="text-muted-foreground">Manage requirement profiles and acceptance criteria.</p>
                 </div>
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                    <DialogTrigger asChild>
-                        <Button>
-                            <Plus className="mr-2 h-4 w-4" /> Create Standard
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>New Standard</DialogTitle>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <label>Name</label>
-                                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Airbus A350 Interior" />
-                            </div>
-                            <div className="grid gap-2">
-                                <label>Description</label>
-                                <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Standard interior components" />
-                            </div>
-                            <Button onClick={handleCreate} className="mt-4">Create</Button>
-                        </div>
-                    </DialogContent>
-                </Dialog>
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Standards</h1>
+                    <p className="text-muted-foreground">Manage requirement profiles and acceptance criteria.</p>
+                </div>
+                <Button onClick={() => setCreateOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" /> Create Standard
+                </Button>
             </div>
+
+            {/* Create Dialog */}
+            {createOpen && (
+                <RequirementProfileDialog
+                    open={createOpen}
+                    onOpenChange={setCreateOpen}
+                    initialData={null}
+                    onSave={handleCreate}
+                />
+            )}
 
             <div className="border rounded-md">
                 <Table>
@@ -100,13 +89,26 @@ export function RequirementProfileListPage() {
                                 <TableRow
                                     key={profile.id}
                                     className="cursor-pointer hover:bg-muted/50"
-                                    onClick={() => navigate(`/standards/${profile.id}`)}
+                                    onClick={() => navigate(profile.id)}
                                 >
                                     <TableCell className="font-medium">{profile.name}</TableCell>
                                     <TableCell>{profile.description}</TableCell>
                                     <TableCell>{profile.rules.length}</TableCell>
                                     <TableCell>
-                                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingProfileId(profile.id);
+                                                    setEditOpen(true);
+                                                }}
+                                            >
+                                                <Edit className="h-4 w-4 text-muted-foreground" />
+                                            </Button>
+                                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -114,6 +116,16 @@ export function RequirementProfileListPage() {
                     </TableBody>
                 </Table>
             </div>
+
+            {/* Edit Dialog */}
+            {editOpen && (
+                <RequirementProfileDialog
+                    open={editOpen}
+                    onOpenChange={setEditOpen}
+                    initialData={requirementProfiles.find(p => p.id === editingProfileId)}
+                    onSave={handleUpdate}
+                />
+            )}
         </div>
     );
 }

@@ -2,114 +2,207 @@ import { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus } from 'lucide-react';
-import { type Laboratory } from '@/types/domain';
+import { Badge } from "@/components/ui/badge";
+import { Plus, FlaskConical, MapPin, Edit, Save } from 'lucide-react';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 export function LaboratoryManager() {
-    const { laboratories, properties, addLaboratory, updateLaboratory } = useAppStore();
+    const { laboratories, testMethods, addLaboratory, updateLaboratory } = useAppStore();
+
+    // New Lab State
     const [isCreating, setIsCreating] = useState(false);
-    const [newLabName, setNewLabName] = useState('');
+    const [newLabName, setNewLabName] = useState("");
+    const [newLabCity, setNewLabCity] = useState("");
+    const [newLabCountry, setNewLabCountry] = useState("");
 
-    // For editing authorized methods
-    const [editingLabId, setEditingLabId] = useState<string | null>(null);
+    // Editing State (Methods)
+    const [editingMethodsLabId, setEditingMethodsLabId] = useState<string | null>(null);
 
-    const handleCreate = () => {
-        if (!newLabName) return;
-        addLaboratory({
+    // Editing State (Details)
+    const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+    const [editingLab, setEditingLab] = useState<{ id: string, name: string, city: string, country: string } | null>(null);
+
+    const handleCreate = async () => {
+        if (!newLabName.trim()) return;
+        await addLaboratory({
             name: newLabName,
+            city: newLabCity,
+            country: newLabCountry,
             authorizedMethods: []
         });
-        setNewLabName('');
+        setNewLabName("");
+        setNewLabCity("");
+        setNewLabCountry("");
         setIsCreating(false);
     };
 
-    const toggleMethod = (lab: Laboratory, method: string) => {
-        const current = lab.authorizedMethods || [];
-        const updated = current.includes(method)
-            ? current.filter(m => m !== method)
-            : [...current, method];
+    const toggleMethod = (lab: any, methodId: string) => {
+        const currentmethods = lab.authorizedMethods || []; // legacy typo fix: authorizedMethods
+        // methodId here should be the method NAME or ID? Domain says string[]. 
+        // Existing mock uses names like 'ISO 527-4'.
+        // Let's stick to names as per existing mock data if IDs not used.
+        // store.ts mock data: authorizedMethods: ['ISO 527-4', 'ISO 1183']
+        // So we use method.name
 
-        updateLaboratory(lab.id, { authorizedMethods: updated });
+        // Find method name
+        const methodObj = testMethods.find(m => m.id === methodId);
+        const methodVal = methodObj ? methodObj.name : methodId;
+
+        const exists = currentmethods.includes(methodVal);
+        const newMethods = exists
+            ? currentmethods.filter((m: string) => m !== methodVal)
+            : [...currentmethods, methodVal];
+
+        updateLaboratory(lab.id, { authorizedMethods: newMethods });
+    };
+
+    const openEditDetails = (lab: any) => {
+        setEditingLab({
+            id: lab.id,
+            name: lab.name,
+            city: lab.city || "",
+            country: lab.country || ""
+        });
+        setEditDetailsOpen(true);
+    };
+
+    const saveDetails = async () => {
+        if (!editingLab) return;
+        await updateLaboratory(editingLab.id, {
+            name: editingLab.name,
+            city: editingLab.city,
+            country: editingLab.country
+        });
+        setEditDetailsOpen(false);
+        setEditingLab(null);
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold tracking-tight">Laboratory Management</h2>
-                    <p className="text-muted-foreground">Manage internal and external laboratories and their authorizations.</p>
+                    <h3 className="text-lg font-medium">Laboratories</h3>
+                    <p className="text-sm text-muted-foreground">
+                        Manage internal and external testing facilities and their capabilities.
+                    </p>
                 </div>
-                <Button onClick={() => setIsCreating(true)} disabled={isCreating}>
-                    <Plus className="mr-2 h-4 w-4" /> Add Laboratory
-                </Button>
+                {!isCreating && (
+                    <Button onClick={() => setIsCreating(true)} size="sm">
+                        <Plus className="mr-2 h-4 w-4" /> Add Laboratory
+                    </Button>
+                )}
             </div>
 
             {isCreating && (
-                <Card className="animate-in fade-in slide-in-from-top-4">
-                    <CardHeader>
-                        <CardTitle>New Laboratory</CardTitle>
+                <Card className="border-dashed">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">New Laboratory</CardTitle>
                     </CardHeader>
-                    <CardContent className="flex gap-4">
-                        <Input
-                            placeholder="Laboratory Name (e.g. External Lab GmbH)"
-                            value={newLabName}
-                            onChange={e => setNewLabName(e.target.value)}
-                        />
-                        <Button onClick={handleCreate}>Save</Button>
-                        <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancel</Button>
+                    <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                                <Label>Name</Label>
+                                <Input
+                                    placeholder="Laboratory Name..."
+                                    value={newLabName}
+                                    onChange={(e) => setNewLabName(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>City</Label>
+                                <Input
+                                    placeholder="City..."
+                                    value={newLabCity}
+                                    onChange={(e) => setNewLabCity(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Country</Label>
+                                <Input
+                                    placeholder="Country..."
+                                    value={newLabCountry}
+                                    onChange={(e) => setNewLabCountry(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancel</Button>
+                            <Button onClick={handleCreate}>Save Laboratory</Button>
+                        </div>
                     </CardContent>
                 </Card>
             )}
 
-            <div className="grid gap-6">
+            <div className="grid gap-4">
                 {laboratories.map(lab => (
                     <Card key={lab.id}>
-                        <CardHeader className="pb-2">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <CardTitle>{lab.name}</CardTitle>
-                                    <CardDescription>ID: {lab.id}</CardDescription>
+                        <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <CardTitle className="text-base flex items-center gap-2">
+                                            <FlaskConical className="h-4 w-4 text-muted-foreground" />
+                                            {lab.name}
+                                        </CardTitle>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditDetails(lab)}>
+                                            <Edit className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <MapPin className="h-3 w-3" />
+                                        {lab.city || "Unknown City"}, {lab.country || "Unknown Country"}
+                                    </div>
                                 </div>
-                                <Button variant="outline" size="sm" onClick={() => setEditingLabId(editingLabId === lab.id ? null : lab.id)}>
-                                    {editingLabId === lab.id ? 'Done' : 'Manage Methods'}
+                                <Button
+                                    variant={editingMethodsLabId === lab.id ? "secondary" : "outline"}
+                                    size="sm"
+                                    onClick={() => setEditingMethodsLabId(editingMethodsLabId === lab.id ? null : lab.id)}
+                                >
+                                    {editingMethodsLabId === lab.id ? "Done" : "Manage Methods"}
                                 </Button>
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-sm font-medium mb-2">Authorized Test Methods:</div>
-
-                            {editingLabId === lab.id ? (
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 border p-4 rounded-md bg-muted/20">
-                                    {properties.flatMap(p => (p.testMethods || []).map(m => ({ p, m }))).map(({ p, m }) => (
-                                        <div key={`${p.id}-${m}`} className="flex items-center space-x-2">
-                                            <Checkbox
-                                                id={`lab-${lab.id}-${p.id}-${m}`}
-                                                checked={(lab.authorizedMethods || []).includes(m)}
-                                                onCheckedChange={() => toggleMethod(lab, m)}
-                                            />
-                                            <label
-                                                htmlFor={`lab-${lab.id}-${p.id}-${m}`}
-                                                className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                            >
-                                                {m} <span className="text-xs text-muted-foreground">({p.name})</span>
-                                            </label>
+                            {editingMethodsLabId === lab.id ? (
+                                <div className="space-y-4 animate-in fade-in duration-300">
+                                    <div className="p-4 border rounded-md bg-muted/30">
+                                        <p className="text-sm font-medium mb-3">Authorized Test Methods</p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                            {testMethods.map(method => (
+                                                <div key={method.id} className="flex items-center space-x-2">
+                                                    <Checkbox
+                                                        id={`${lab.id}-${method.id}`}
+                                                        checked={(lab.authorizedMethods || []).includes(method.name)}
+                                                        onCheckedChange={() => toggleMethod(lab, method.id)}
+                                                    />
+                                                    <label
+                                                        htmlFor={`${lab.id}-${method.id}`}
+                                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                                    >
+                                                        {method.name}
+                                                    </label>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                    {properties.every(p => !p.testMethods || p.testMethods.length === 0) && (
-                                        <div className="col-span-full text-muted-foreground text-sm italic">
-                                            No properties have defined Test Methods yet. Go to Property Registry.
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
                             ) : (
                                 <div className="flex flex-wrap gap-2">
-                                    {(lab.authorizedMethods && lab.authorizedMethods.length > 0) ? (
-                                        lab.authorizedMethods.map(m => (
-                                            <div key={m} className="bg-secondary text-secondary-foreground px-2.5 py-0.5 rounded-md text-xs font-medium border">
+                                    {lab.authorizedMethods && lab.authorizedMethods.length > 0 ? (
+                                        lab.authorizedMethods.map((m: string) => (
+                                            <Badge key={m} variant="secondary" className="font-normal">
                                                 {m}
-                                            </div>
+                                            </Badge>
                                         ))
                                     ) : (
                                         <span className="text-muted-foreground text-sm italic">No methods authorized.</span>
@@ -120,6 +213,39 @@ export function LaboratoryManager() {
                     </Card>
                 ))}
             </div>
+            {/* Edit Details Dialog */}
+            <Dialog open={editDetailsOpen} onOpenChange={setEditDetailsOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Laboratory</DialogTitle>
+                        <DialogDescription>
+                            Update the location and contact details for this facility.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {editingLab && (
+                        <div className="grid gap-4 py-4">
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="name" className="text-right">Name</Label>
+                                <Input id="name" value={editingLab.name} onChange={(e) => setEditingLab({ ...editingLab, name: e.target.value })} className="col-span-3" />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="city" className="text-right">City</Label>
+                                <Input id="city" value={editingLab.city} onChange={(e) => setEditingLab({ ...editingLab, city: e.target.value })} className="col-span-3" />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="country" className="text-right">Country</Label>
+                                <Input id="country" value={editingLab.country} onChange={(e) => setEditingLab({ ...editingLab, country: e.target.value })} className="col-span-3" />
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditDetailsOpen(false)}>Cancel</Button>
+                        <Button onClick={saveDetails}>
+                            <Save className="mr-2 h-4 w-4" /> Save Changes
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

@@ -58,6 +58,17 @@ export function AnalysisView() {
             .filter(Boolean);
     }
 
+    // Calculate Additional Properties not in profiles
+    const displayedPropNames = new Set<string>();
+    displayProfiles.forEach((p: any) => {
+        p.rules.forEach((r: any) => {
+            const def = properties.find(def => def.id === r.propertyId);
+            if (def) displayedPropNames.add(def.name);
+        });
+    });
+    const extraProperties = selectedMaterial ? (selectedMaterial.properties || []).filter(p => !displayedPropNames.has(p.name)) : [];
+
+
     // Helper to get actual value (Real calculation from measurements)
     const getActualStats = (propId: string) => {
         if (!selectedMaterial || !selectedMaterial.measurements) return null;
@@ -179,8 +190,8 @@ export function AnalysisView() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Property</TableHead>
-                                        <TableHead>Target (Spec)</TableHead>
-                                        <TableHead>Actual (Avg)</TableHead>
+                                        <TableHead>Requirement (Standard)</TableHead>
+                                        <TableHead>Material Value</TableHead>
                                         <TableHead className="text-right">Status</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -188,7 +199,31 @@ export function AnalysisView() {
                                     {profile.rules.map((rule: any, idx: number) => {
                                         const prop = properties.find(p => p.id === rule.propertyId);
                                         const stats = getActualStats(rule.propertyId);
-                                        const actual = stats ? stats.average : null;
+
+                                        // Determine Actual Value: Measurement Avg > Manual Property
+                                        let actual = stats ? stats.average : null;
+                                        let source = stats ? 'measurement' : 'none';
+
+                                        if (actual === null && prop) {
+                                            // Check Manual Properties
+                                            // 1. Try matching by requirementProfileId + Name (strict)
+                                            let matProp = selectedMaterial.properties?.find(p =>
+                                                p.name === prop.name && p.requirementProfileId === profile.id
+                                            );
+                                            // 2. Fallback to just Name (generic)
+                                            if (!matProp) {
+                                                matProp = selectedMaterial.properties?.find(p => p.name === prop.name);
+                                            }
+
+                                            if (matProp) {
+                                                const val = typeof matProp.value === 'number' ? matProp.value : parseFloat(matProp.value);
+                                                if (!isNaN(val)) {
+                                                    actual = val;
+                                                    source = 'property';
+                                                }
+                                            }
+                                        }
+
                                         const status = analyzeStatus(rule, actual);
 
                                         return (
@@ -205,7 +240,8 @@ export function AnalysisView() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div>{actual !== null ? actual.toFixed(2) : <span className="text-muted-foreground italic">No Data</span>}</div>
-                                                    {stats && <div className="text-xs text-muted-foreground">Lab: {stats.labs} (n={stats.count})</div>}
+                                                    {source === 'measurement' && stats && <div className="text-xs text-muted-foreground">Lab: {stats.labs} (n={stats.count})</div>}
+                                                    {source === 'property' && <div className="text-xs text-muted-foreground">Manual Property</div>}
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     {status === "pass" && <Badge className="bg-emerald-600 hover:bg-emerald-700">Pass <CheckCircle2 className="ml-1 h-3 w-3" /></Badge>}
@@ -222,9 +258,38 @@ export function AnalysisView() {
                 </div>
             )}
 
-            {selectedMaterial && displayProfiles.length === 0 && (
+            {selectedMaterial && extraProperties.length > 0 && (
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle>Additional Properties</CardTitle>
+                        <CardDescription>Properties defined on the material but not part of the active standards.</CardDescription>
+                    </CardHeader>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Property</TableHead>
+                                <TableHead>Value</TableHead>
+                                <TableHead>Unit</TableHead>
+                                <TableHead>Context / Spec</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {extraProperties.map((p, idx) => (
+                                <TableRow key={p.id || idx}>
+                                    <TableCell className="font-medium">{p.name}</TableCell>
+                                    <TableCell>{p.value}</TableCell>
+                                    <TableCell className="text-muted-foreground text-sm">{p.unit}</TableCell>
+                                    <TableCell className="text-muted-foreground text-sm">{p.specification || '-'}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </Card>
+            )}
+
+            {selectedMaterial && displayProfiles.length === 0 && extraProperties.length === 0 && (
                 <div className="text-center py-12 border rounded-lg bg-muted/10">
-                    <p className="text-muted-foreground">No standards assigned to this material. Select a specific profile above or assign standards in the Material Detail view.</p>
+                    <p className="text-muted-foreground">No data found for this material. Assign standards or add properties in the Material Detail view.</p>
                 </div>
             )}
         </div>

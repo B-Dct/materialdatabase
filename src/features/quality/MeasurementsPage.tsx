@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,11 +12,12 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText } from "lucide-react";
-import { MeasurementUploadDialog } from "./MeasurementUploadDialog";
+import { FileText, Power } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function MeasurementsPage() {
-    const { measurements, fetchMeasurements, materials, properties, fetchMaterials, fetchProperties } = useAppStore();
+    const { measurements, fetchMeasurements, materials, properties, fetchMaterials, fetchProperties, updateMeasurement } = useAppStore();
+    const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
@@ -44,7 +46,9 @@ export function MeasurementsPage() {
                     <h1 className="text-2xl font-bold tracking-tight">Measurements</h1>
                     <p className="text-muted-foreground">Manage laboratory test reports and data points.</p>
                 </div>
-                <MeasurementUploadDialog />
+                <Button onClick={() => navigate("/measurements/new")}>
+                    <FileText className="mr-2 h-4 w-4" /> Add Measurement
+                </Button>
             </div>
 
             <Card>
@@ -66,6 +70,7 @@ export function MeasurementsPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead className="w-[80px]">Status</TableHead>
                                 <TableHead>Date</TableHead>
                                 <TableHead>Material</TableHead>
                                 <TableHead>Property</TableHead>
@@ -78,7 +83,7 @@ export function MeasurementsPage() {
                         <TableBody>
                             {filtered.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                                    <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
                                         No measurements found.
                                     </TableCell>
                                 </TableRow>
@@ -86,9 +91,24 @@ export function MeasurementsPage() {
                             {filtered.map((m) => {
                                 const prop = properties.find(p => p.id === m.propertyDefinitionId);
                                 const mat = materials.find(mat => mat.id === m.materialId);
+                                const isActive = m.isActive !== false;
 
                                 return (
-                                    <TableRow key={m.id}>
+                                    <TableRow key={m.id} className={!isActive ? "opacity-60 bg-muted/50" : ""}>
+                                        <TableCell>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className={`h-6 w-6 p-0 rounded-full ${isActive ? "text-green-600 hover:text-green-700 hover:bg-green-100" : "text-muted-foreground hover:text-foreground"}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    updateMeasurement(m.id, { isActive: !isActive });
+                                                }}
+                                                title={isActive ? "Deactivate Measurement" : "Activate Measurement"}
+                                            >
+                                                <Power className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </TableCell>
                                         <TableCell>{new Date(m.date).toLocaleDateString()}</TableCell>
                                         <TableCell>
                                             {mat ? (

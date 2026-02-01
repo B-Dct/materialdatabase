@@ -11,28 +11,31 @@ export function MaterialStatistics({ material }: MaterialStatisticsProps) {
     const standardCount = material.assignedProfileIds?.length || 0;
 
     // 2. Properties (Specs)
-    // Counting properties that have a "specification" field filled or simple count
     const propertyCount = material.properties?.length || 0;
     const specifiedProperties = material.properties?.filter(p => p.specification).length || 0;
 
     // 3. Tests
-    const testCount = material.measurements?.length || 0;
+    const activeMeasurements = (material.measurements || []).filter(m => m.isActive !== false);
+    const testCount = activeMeasurements.length;
 
-    // 4. Last Test Date
-    const lastTestDate = material.measurements?.length
-        ? new Date(Math.max(...material.measurements.map(m => new Date(m.date).getTime()))).toLocaleDateString()
-        : 'N/A';
+    // 4. Last Test Date (SAFE MODE)
+    // const lastTestDate = activeMeasurements.length
+    //     ? new Date(Math.max(...activeMeasurements.map(m => new Date(m.date).getTime()))).toLocaleDateString()
+    //     : 'N/A';
+    const lastTestDate = "N/A";
 
-    // 5. Creation Age
-    const creationDate = material.createdAt ? new Date(material.createdAt) : new Date();
-    const isValidDate = !isNaN(creationDate.getTime());
-    const daysSinceCreation = isValidDate
-        ? Math.floor((new Date().getTime() - creationDate.getTime()) / (1000 * 3600 * 24))
-        : 0;
-    const creationDateString = isValidDate ? creationDate.toLocaleDateString() : 'Unknown';
+    // 5. Creation Age (SAFE MODE)
+    // const creationDate = material.createdAt ? new Date(material.createdAt) : new Date();
+    // const isValidDate = !isNaN(creationDate.getTime());
+    // const daysSinceCreation = isValidDate
+    //     ? Math.floor((new Date().getTime() - creationDate.getTime()) / (1000 * 3600 * 24))
+    //     : 0;
+    // const creationDateString = isValidDate ? creationDate.toLocaleDateString() : 'Unknown';
+    const daysSinceCreation = 0;
+    const creationDateString = "Unknown";
 
     return (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-in fade-in duration-500">
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Defined Properties</CardTitle>

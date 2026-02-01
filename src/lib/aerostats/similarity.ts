@@ -1,95 +1,117 @@
 /**
- * AeroStats Similarity Engine
- * Calculates fuzzy similarity between materials/entities.
+ * AeroStats - Similarity Engine
+ * 
+ * Calculates a weighted similarity score between a Target (Reference) material
+ * and a Candidate (Alternative) material.
  */
 
 export interface SimilarityCriteria {
     propertyId: string;
-    weight: number; // 0.0 to 1.0
-    critical?: boolean; // If true, requires hard tolerance check
-    tolerance?: number; // +/- percentage allowed (e.g. 0.10 for 10%)
+    weight: number; // 1-10
+    type: 'numeric' | 'text' | 'range';
+    isCritical?: boolean; // If true, finding falls below valid range = Immediate Failure
+    tolerance?: number; // Absolute tolerance (+/-) or percentage depending on impl. Let's assume Absolute for now. 
+    // Future: min/max specific overrides
 }
 
 export interface SimilarityResult {
-    score: number; // 0 - 100
-    isViable: boolean; // True if no critical requirements failed
+    score: number; // 0.0 to 1.0
     details: {
         propertyId: string;
         score: number;
-        delta: number; // % difference
-        status: 'MATCH' | 'MARGINAL' | 'FAIL' | 'MISSING';
+        delta: number;
+        passed: boolean; // For critical checks
     }[];
+    isCriticalFailure: boolean;
 }
 
-/**
- * Calculates similarity between a candidate and a reference target.
- * Formula: SS = Sum(w_i * Match_i)
- */
 export function calculateSimilarity(
-    targetValues: Record<string, number>,
-    candidateValues: Record<string, number>,
+    targetValues: Record<string, number | string>,
+    candidateValues: Record<string, number | string>,
     criteria: SimilarityCriteria[]
 ): SimilarityResult {
-    let totalScore = 0;
-    let totalWeight = 0;
-    let isViable = true;
-    const details: SimilarityResult['details'] = [];
 
-    for (const c of criteria) {
-        const tVal = targetValues[c.propertyId];
-        const cVal = candidateValues[c.propertyId];
+    let totalWeightedScore = 0;
+    let totalMaxWeight = 0;
+    let criticalFailure = false;
+    const details = [];
 
-        // Handle Missing Data
-        if (tVal === undefined || cVal === undefined) {
+    for (const criterion of criteria) {
+        const targetVal = targetValues[criterion.propertyId];
+        const candidateVal = candidateValues[criterion.propertyId];
+        const weight = criterion.weight;
+
+        totalMaxWeight += weight;
+
+        // 1. Handle Missing Data
+        if (targetVal === undefined || candidateVal === undefined) {
             details.push({
-                propertyId: c.propertyId,
+                propertyId: criterion.propertyId,
                 score: 0,
                 delta: 0,
-                status: 'MISSING'
+                passed: !criterion.isCritical // Fail if critical and missing
             });
-            if (c.critical) isViable = false;
+            if (criterion.isCritical) criticalFailure = true;
             continue;
         }
 
-        // Calculate Delta
-        const delta = tVal !== 0 ? (cVal - tVal) / tVal : 0;
-        const absDelta = Math.abs(delta);
+        let score = 0;
+        let delta = 0;
 
-        // Calculate Score component (Linear decay: 0% delta = 100 score, 50% delta = 0 score)
-        // Tuneable parameter: "Zero Score Threshold" = 50% deviation
-        const zeroScoreThreshold = 0.5;
-        const rawScore = Math.max(0, 100 * (1 - (absDelta / zeroScoreThreshold)));
+        // 2. Numeric Calculation
+        if (criterion.type === 'numeric') {
+            const t = Number(targetVal);
+            const c = Number(candidateVal);
+            delta = Math.abs(t - c);
+            const tolerance = criterion.tolerance || 0;
 
-        // Check Criticality
-        let status: 'MATCH' | 'MARGINAL' | 'FAIL' = 'MATCH';
+            if (delta <= tolerance) {
+                // Perfect score if within tolerance
+                score = 1.0;
+            } else {
+                // Linear penalty outside tolerance
+                // How much deviation is 0 score? Let's say 50% deviation from target is 0 score?
+                // Or use a classic similarity decay: 1 / (1 + delta) -> normalized?
+                // Let's use percentage deviation map:
+                // Error = (delta - tolerance) / target 
+                // e.g. Target 100, Tol 10, Cand 80. Delta 20. Effective Error = (20-10)/100 = 0.1 (10%)
+                // Score = 1 - Error.
 
-        if (c.tolerance) {
-            if (absDelta > c.tolerance) {
-                status = 'FAIL';
-                if (c.critical) isViable = false;
-            } else if (absDelta > c.tolerance * 0.8) {
-                status = 'MARGINAL';
+                // Avoid division by zero
+                const divisor = t === 0 ? 1 : Math.abs(t);
+                const errorPct = (delta - tolerance) / divisor; // 0.1
+
+                // Scaling: If error is > 50%, score is 0? Or 100% error is 0?
+                // "Hebe signifikante Abweichungen > 10% hervor" implies tight sensitivity.
+                // Let's being generous: 100% deviation = 0 score.
+                score = Math.max(0, 1 - errorPct);
             }
         }
+        // 3. Text/Enum Calculation
+        else {
+            score = (String(targetVal) === String(candidateVal)) ? 1.0 : 0.0;
+        }
 
-        // Add to totals
-        totalScore += rawScore * c.weight;
-        totalWeight += c.weight;
+        // 4. Critical Check
+        const passed = !(criterion.isCritical && score < 1.0); // Strict: Critical must be perfect/within tolerance
+        if (!passed) criticalFailure = true;
+
+        totalWeightedScore += (score * weight);
 
         details.push({
-            propertyId: c.propertyId,
-            score: rawScore,
-            delta: delta * 100,
-            status
+            propertyId: criterion.propertyId,
+            score,
+            delta,
+            passed
         });
     }
 
-    // Normalize Final Score
-    const finalScore = totalWeight > 0 ? totalScore / totalWeight : 0;
+    // Normalized Score
+    const finalScore = totalMaxWeight === 0 ? 0 : (totalWeightedScore / totalMaxWeight);
 
     return {
-        score: Math.round(finalScore),
-        isViable,
-        details
+        score: criticalFailure ? 0 : finalScore, // Critical failure zeroes out the match? Or just flags it? SKILL says "FAILED markieren". Usually score 0 is safest to sort to bottom.
+        details,
+        isCriticalFailure: criticalFailure
     };
 }

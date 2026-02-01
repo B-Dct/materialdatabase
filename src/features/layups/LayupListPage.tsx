@@ -6,7 +6,7 @@ import type { Layup } from '@/types/domain';
 import { Button } from '@/components/ui/button';
 import { Plus, Eye, Archive } from 'lucide-react'; // Import Archive icon
 import { useNavigate } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { format } from 'date-fns';
 
 export function LayupListPage() {
@@ -57,16 +57,7 @@ export function LayupListPage() {
             header: "Status",
             cell: ({ row }) => {
                 const status = row.getValue("status") as string;
-                let variant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-                if (status === 'approved' || status === 'standard' || status === 'active') variant = 'default';
-                if (status === 'blocked' || status === 'restricted') variant = 'destructive';
-                if (status === 'obsolete') variant = 'outline';
-
-                return (
-                    <Badge variant={variant}>
-                        {status}
-                    </Badge>
-                );
+                return <StatusBadge status={status} />;
             },
         },
 
@@ -176,9 +167,8 @@ export function LayupListPage() {
                             options: [
                                 { label: "Active", value: "active" },
                                 { label: "Standard", value: "standard" },
-                                { label: "In Review", value: "in_review" },
+                                { label: "Engineering", value: "engineering" },
                                 { label: "Restricted", value: "restricted" },
-                                { label: "Blocked", value: "blocked" },
                                 { label: "Obsolete", value: "obsolete" }
                             ]
                         },

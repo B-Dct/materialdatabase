@@ -91,6 +91,7 @@ export function DataTableFacetedFilter<TData, TValue>({
                                 return (
                                     <CommandItem
                                         key={option.value}
+                                        value={option.label} // Pass label as value for fuzzy search, or combine logic
                                         onSelect={() => {
                                             if (isSelected) {
                                                 selectedValues.delete(option.value)

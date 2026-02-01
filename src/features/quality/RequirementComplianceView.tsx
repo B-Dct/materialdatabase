@@ -40,8 +40,8 @@ export function RequirementComplianceView({ entityId, entityType, profileId }: R
                     <TableHeader>
                         <TableRow>
                             <TableHead className="w-[200px]">Property</TableHead>
-                            <TableHead>Requirement</TableHead>
-                            <TableHead>Actual</TableHead>
+                            <TableHead>Requirement (Standard)</TableHead>
+                            <TableHead>Material Value</TableHead>
                             <TableHead className="text-right">Delta</TableHead>
                             <TableHead className="w-[50px]"></TableHead>
                         </TableRow>

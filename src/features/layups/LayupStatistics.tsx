@@ -61,7 +61,7 @@ export function LayupStatistics({ layup }: LayupStatisticsProps) {
                     <Activity className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">{layup.measurements?.length || 0}</div>
+                    <div className="text-2xl font-bold">{(layup.measurements || []).filter(m => m.isActive !== false).length}</div>
                     <p className="text-xs text-muted-foreground">
                         Since {isValidDate ? creationDate.toLocaleDateString() : '-'}
                     </p>

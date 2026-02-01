@@ -19,16 +19,30 @@ interface PropertyManagerDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     material: Material;
+
+    requirementProfileId?: string;
+    initialSpecificationId?: string; // Changed from initialSpecification (name) to ID for reliability
+    initialName?: string;
+    initialUnit?: string;
 }
 
-export function PropertyManagerDialog({ open, onOpenChange, material }: PropertyManagerDialogProps) {
-    const { updateMaterial, properties, fetchProperties } = useAppStore();
+export function PropertyManagerDialog({
+    open,
+    onOpenChange,
+    material,
+    requirementProfileId,
+    initialSpecificationId,
+    initialName,
+    initialUnit
+}: PropertyManagerDialogProps) {
+    const { updateMaterial, properties, fetchProperties, specifications } = useAppStore();
+
     const [newProp, setNewProp] = useState<Partial<MaterialProperty>>({
         name: "",
         value: "",
         unit: "",
         method: "",
-        specification: ""
+        specificationId: ""
     });
 
     // Helper to get definition for currently selected property
@@ -37,8 +51,19 @@ export function PropertyManagerDialog({ open, onOpenChange, material }: Property
     useEffect(() => {
         if (open) {
             fetchProperties();
+            // Reset or Initialize form when opened
+            setNewProp({
+                name: initialName || "",
+                value: "",
+                unit: initialUnit || "",
+                method: "",
+                specificationId: initialSpecificationId || "",
+                vMin: undefined,
+                vMax: undefined,
+                vMean: undefined
+            });
         }
-    }, [open, fetchProperties]);
+    }, [open, fetchProperties, initialName, initialUnit, initialSpecificationId]);
 
     const handlePropertySelect = (propName: string) => {
         // Find existing definition to auto-fill unit if available
@@ -51,7 +76,7 @@ export function PropertyManagerDialog({ open, onOpenChange, material }: Property
         }));
     };
 
-    const handleAdd = () => {
+    const handleAdd = async () => {
         if (!newProp.name || !newProp.value) return;
 
         const property: MaterialProperty = {
@@ -60,21 +85,36 @@ export function PropertyManagerDialog({ open, onOpenChange, material }: Property
             value: newProp.value,
             unit: newProp.unit || "",
             method: newProp.method,
-            specification: newProp.specification || ""
+            specificationId: newProp.specificationId,
+            specification: specifications.find(s => s.id === newProp.specificationId)?.name || "", // Populate name for legacy support
+            requirementProfileId: requirementProfileId,
+            // Add statistical values if present
+            vMin: newProp.vMin,
+            vMax: newProp.vMax,
+            vMean: newProp.vMean
         };
 
         const updatedProperties = [...(material.properties || []), property];
 
-        updateMaterial(material.id, { properties: updatedProperties });
+        try {
+            await updateMaterial(material.id, { properties: updatedProperties });
 
-        // Reset form
-        setNewProp({
-            name: "",
-            value: "",
-            unit: "",
-            method: "",
-            specification: ""
-        });
+            // Reset form
+            setNewProp({
+                name: "",
+                value: "",
+                unit: "",
+                method: "",
+                specification: "",
+                vMin: undefined,
+                vMax: undefined,
+                vMean: undefined
+            });
+        } catch (error) {
+            console.error("Failed to add property:", error);
+            // Optionally set an error state here to show in UI
+            alert("Failed to save property. Check console for details.");
+        }
     };
 
     const handleDelete = (id: string) => {
@@ -142,32 +182,72 @@ export function PropertyManagerDialog({ open, onOpenChange, material }: Property
                                 </div>
                             )}
 
-                            <div className="space-y-1">
-                                <Label htmlFor="prop-value" className="text-xs">Value</Label>
-                                {selectedDef?.options && selectedDef.options.length > 0 ? (
-                                    <Select
-                                        value={String(newProp.value)}
-                                        onValueChange={val => setNewProp(prev => ({ ...prev, value: val }))}
-                                    >
-                                        <SelectTrigger id="prop-value" className="h-9">
-                                            <SelectValue placeholder="Select value..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {selectedDef.options.map((opt, i) => (
-                                                <SelectItem key={i} value={opt}>
-                                                    {opt}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                            <div className={selectedDef?.inputStructure === 'min-mean-max' ? "col-span-2 grid grid-cols-3 gap-2" : "space-y-1"}>
+                                {selectedDef?.inputStructure === 'min-mean-max' ? (
+                                    <>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="prop-min" className="text-xs">Min</Label>
+                                            <Input
+                                                id="prop-min"
+                                                className="h-9"
+                                                type="number"
+                                                placeholder="Min"
+                                                value={newProp.vMin || ''}
+                                                onChange={e => setNewProp(prev => ({ ...prev, vMin: parseFloat(e.target.value) }))}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="prop-mean" className="text-xs">Mean (Value)</Label>
+                                            <Input
+                                                id="prop-mean"
+                                                className="h-9"
+                                                type="number"
+                                                placeholder="Mean"
+                                                value={newProp.vMean || ''}
+                                                onChange={e => setNewProp(prev => ({ ...prev, vMean: parseFloat(e.target.value), value: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="prop-max" className="text-xs">Max</Label>
+                                            <Input
+                                                id="prop-max"
+                                                className="h-9"
+                                                type="number"
+                                                placeholder="Max"
+                                                value={newProp.vMax || ''}
+                                                onChange={e => setNewProp(prev => ({ ...prev, vMax: parseFloat(e.target.value) }))}
+                                            />
+                                        </div>
+                                    </>
                                 ) : (
-                                    <Input
-                                        id="prop-value"
-                                        className="h-9"
-                                        placeholder="e.g. 1.45"
-                                        value={newProp.value}
-                                        onChange={e => setNewProp(prev => ({ ...prev, value: e.target.value }))}
-                                    />
+                                    <>
+                                        <Label htmlFor="prop-value" className="text-xs">Value</Label>
+                                        {selectedDef?.options && selectedDef.options.length > 0 ? (
+                                            <Select
+                                                value={String(newProp.value)}
+                                                onValueChange={val => setNewProp(prev => ({ ...prev, value: val }))}
+                                            >
+                                                <SelectTrigger id="prop-value" className="h-9">
+                                                    <SelectValue placeholder="Select value..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {selectedDef.options.map((opt, i) => (
+                                                        <SelectItem key={i} value={opt}>
+                                                            {opt}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        ) : (
+                                            <Input
+                                                id="prop-value"
+                                                className="h-9"
+                                                placeholder="e.g. 1.45"
+                                                value={newProp.value}
+                                                onChange={e => setNewProp(prev => ({ ...prev, value: e.target.value }))}
+                                            />
+                                        )}
+                                    </>
                                 )}
                             </div>
                             <div className="space-y-1">
@@ -177,19 +257,32 @@ export function PropertyManagerDialog({ open, onOpenChange, material }: Property
                                     className="h-9"
                                     placeholder="e.g. g/cm³"
                                     value={newProp.unit}
+                                    disabled={!!selectedDef}
                                     onChange={e => setNewProp(prev => ({ ...prev, unit: e.target.value }))}
                                 />
                             </div>
-                            <div className="space-y-1">
-                                <Label htmlFor="prop-spec" className="text-xs">Specification/Source</Label>
-                                <Input
-                                    id="prop-spec"
-                                    className="h-9"
-                                    placeholder="e.g. TDS v2"
-                                    value={newProp.specification}
-                                    onChange={e => setNewProp(prev => ({ ...prev, specification: e.target.value }))}
-                                />
-                            </div>
+
+                            {!initialSpecificationId && (
+                                <div className="space-y-1">
+                                    <Label htmlFor="prop-spec" className="text-xs">Specification</Label>
+                                    <Select
+                                        value={newProp.specificationId || "general"}
+                                        onValueChange={(val) => setNewProp(prev => ({ ...prev, specificationId: val === "general" ? undefined : val }))}
+                                    >
+                                        <SelectTrigger id="prop-spec" className="h-9">
+                                            <SelectValue placeholder="General (No Spec)" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="general">General (No Spec)</SelectItem>
+                                            {specifications.filter(s => s.materialId === material.id).map(spec => (
+                                                <SelectItem key={spec.id} value={spec.id}>
+                                                    {spec.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
                         </div>
                         <Button size="sm" onClick={handleAdd} disabled={!newProp.name || !newProp.value}>
                             <Plus className="h-4 w-4 mr-2" /> Add Property
@@ -211,7 +304,16 @@ export function PropertyManagerDialog({ open, onOpenChange, material }: Property
                                         <span className="font-medium text-sm">{prop.name}</span>
                                         {prop.method && <span className="text-[10px] text-muted-foreground">{prop.method}</span>}
                                     </div>
-                                    <span className="text-sm">{prop.value} <span className="text-muted-foreground text-xs">{prop.unit}</span></span>
+                                    <div className="flex flex-col">
+                                        <span className="text-sm">
+                                            {prop.value} <span className="text-muted-foreground text-xs">{prop.unit}</span>
+                                        </span>
+                                        {(prop.vMin !== undefined || prop.vMax !== undefined) && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                                Range: {prop.vMin ?? '?'} - {prop.vMax ?? '?'} (Mean: {prop.vMean ?? prop.value})
+                                            </span>
+                                        )}
+                                    </div>
                                     <span className="text-xs text-muted-foreground col-span-2">{prop.specification}</span>
                                 </div>
                                 <Button

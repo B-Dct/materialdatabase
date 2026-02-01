@@ -16,14 +16,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, ArrowUpDown } from 'lucide-react';
+import { Plus, Pencil, ArrowUpDown, Trash } from 'lucide-react';
 import { type PropertyDefinition } from '@/types/domain';
 import { useAuth } from '@/lib/auth';
 import { DataTable } from '@/components/ui/data-table';
 import type { ColumnDef } from '@tanstack/react-table';
 
 export function PropertyRegistry() {
-    const { properties, fetchProperties, addProperty, updateProperty } = useAppStore();
+    const { properties, fetchProperties, addProperty, updateProperty, deleteProperty } = useAppStore();
     const { can } = useAuth();
     const [open, setOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -139,12 +139,29 @@ export function PropertyRegistry() {
             cell: ({ row }) => <span className="capitalize">{row.getValue("dataType")}</span>,
         },
         {
+            accessorKey: "inputStructure",
+            header: "Input Mode",
+            cell: ({ row }) => <span className="text-xs uppercase text-muted-foreground">{row.original.inputStructure === 'min-mean-max' ? 'Stat' : 'Simple'}</span>,
+        },
+        {
             id: "actions",
             cell: ({ row }) => {
                 return can('manage:properties') ? (
-                    <div className="text-right">
+                    <div className="flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(row.original)}>
                             <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete "${row.original.name}"? This cannot be undone.`)) {
+                                    deleteProperty(row.original.id);
+                                }
+                            }}
+                        >
+                            <Trash className="h-4 w-4" />
                         </Button>
                     </div>
                 ) : null
@@ -236,6 +253,21 @@ export function PropertyRegistry() {
                                             <SelectItem value="numeric">Numeric</SelectItem>
                                             <SelectItem value="text">Text</SelectItem>
                                             <SelectItem value="range">Range</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="grid gap-2">
+                                    <label>Input Structure</label>
+                                    <Select
+                                        value={formData.inputStructure || 'single'}
+                                        onValueChange={(val: any) => setFormData({ ...formData, inputStructure: val })}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="single">Single Value</SelectItem>
+                                            <SelectItem value="min-mean-max">Statistical (Min, Mean, Max)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>

@@ -1,18 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
 
 import { Plus, Edit, ChevronDown, ChevronRight } from 'lucide-react';
-import { RequirementEditorDialog } from './RequirementEditorDialog';
+import { RequirementProfileDialog } from './RequirementEditorDialog';
 import { RequirementComplianceView } from './RequirementComplianceView';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -23,53 +14,47 @@ interface RequirementProfileManagerProps {
 
 export function RequirementProfileManager({ entityId, entityType }: RequirementProfileManagerProps) {
     const { requirementProfiles, properties, fetchRequirementProfiles, fetchProperties, addRequirementProfile, updateRequirementProfile } = useAppStore();
-    const [createOpen, setCreateOpen] = useState(false);
-
-    // Editor State
-    const [editorOpen, setEditorOpen] = useState(false);
+    const [dialogOpen, setDialogOpen] = useState(false);
     const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
 
     // Expansion State for Compliance View
     const [expandedProfileId, setExpandedProfileId] = useState<string | null>(null);
-
-    // Create Form State
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
 
     useEffect(() => {
         fetchRequirementProfiles();
         fetchProperties();
     }, [fetchRequirementProfiles, fetchProperties]);
 
-    const handleCreate = async () => {
-        if (!name) return;
-        await addRequirementProfile({
-            name,
-            description,
-            rules: [] // Start empty, then edit
-        });
-        setCreateOpen(false);
-        setName('');
-        setDescription('');
+    const handleOpenCreate = () => {
+        setEditingProfileId(null);
+        setDialogOpen(true);
     };
 
-    const handleOpenEditor = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent toggle
+    const handleOpenEdit = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
         setEditingProfileId(id);
-        setEditorOpen(true);
+        setDialogOpen(true);
     };
 
-    const handleSaveRules = async (rules: any[]) => {
+    const handleSave = async (profileData: any) => {
         if (editingProfileId) {
-            await updateRequirementProfile(editingProfileId, { rules });
+            await updateRequirementProfile(editingProfileId, profileData);
+        } else {
+            await addRequirementProfile({
+                name: profileData.name,
+                description: profileData.description,
+                rules: profileData.rules || [],
+                applicability: profileData.applicability || []
+            });
         }
+        setDialogOpen(false);
     };
 
     const getPropName = (id: string) => properties.find(p => p.id === id)?.name || id;
 
     const editingProfile = requirementProfiles.find(p => p.id === editingProfileId);
 
-    // Filter profiles if needed (e.g. only assigned ones?) 
+    // Filter profiles if needed (e.g. only assigned ones?)
     // Ideally we show "Assigned" first? For now show all.
 
     return (
@@ -86,29 +71,9 @@ export function RequirementProfileManager({ entityId, entityType }: RequirementP
                         <h3 className="text-lg font-semibold">Assigned Standards & Compliance</h3>
                     )}
                 </div>
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                    <DialogTrigger asChild>
-                        <Button variant={entityId ? "outline" : "default"} size={entityId ? "sm" : "default"}>
-                            <Plus className="mr-2 h-4 w-4" /> {entityId ? "Add Standard" : "Create Profile"}
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>New Specification Profile</DialogTitle>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <label>Profile Name</label>
-                                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Airbus A350 Interior" />
-                            </div>
-                            <div className="grid gap-2">
-                                <label>Description</label>
-                                <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Standard interior components" />
-                            </div>
-                            <Button onClick={handleCreate} className="mt-4">Create Profile</Button>
-                        </div>
-                    </DialogContent>
-                </Dialog>
+                <Button variant={entityId ? "outline" : "default"} size={entityId ? "sm" : "default"} onClick={handleOpenCreate}>
+                    <Plus className="mr-2 h-4 w-4" /> {entityId ? "Add Standard" : "Create Profile"}
+                </Button>
             </div>
 
             <div className="grid gap-4 md:grid-cols-1">
@@ -129,7 +94,7 @@ export function RequirementProfileManager({ entityId, entityType }: RequirementP
                                         <p className="text-sm text-muted-foreground">{profile.description}</p>
                                     </div>
                                 </CollapsibleTrigger>
-                                <Button variant="ghost" size="icon" onClick={(e) => handleOpenEditor(profile.id, e)}>
+                                <Button variant="ghost" size="icon" onClick={(e) => handleOpenEdit(profile.id, e)}>
                                     <Edit className="h-4 w-4 text-primary" />
                                 </Button>
                             </div>
@@ -171,12 +136,12 @@ export function RequirementProfileManager({ entityId, entityType }: RequirementP
                 ))}
             </div>
 
-            {editingProfile && (
-                <RequirementEditorDialog
-                    open={editorOpen}
-                    onOpenChange={setEditorOpen}
-                    initialRules={editingProfile.rules}
-                    onSave={handleSaveRules}
+            {dialogOpen && (
+                <RequirementProfileDialog
+                    open={dialogOpen}
+                    onOpenChange={setDialogOpen}
+                    initialData={editingProfile || null}
+                    onSave={handleSave}
                 />
             )}
         </div>

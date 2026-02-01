@@ -1,4 +1,4 @@
-export type EntityStatus = "standard" | "blocked" | "in_review" | "obsolete" | "restricted" | "archived" | "active" | "approved";
+export type EntityStatus = "active" | "standard" | "restricted" | "obsolete" | "engineering";
 
 export interface ProcessParameter {
     key: string;
@@ -11,6 +11,18 @@ export interface ManufacturingProcess {
     name: string;
     description: string;
     defaultParams: Record<string, string | number>;
+}
+
+export interface TestMethodPropertyConfig {
+    propertyId: string;
+    statsTypes: ('mean' | 'range' | 'design')[]; // mean, range (min/max), design (A/B)
+}
+
+export interface TestMethod {
+    id: string;
+    name: string;
+    description?: string;
+    properties: TestMethodPropertyConfig[]; // Ordered list with config
 }
 
 export interface PropertyDefinition {
@@ -26,6 +38,20 @@ export interface PropertyDefinition {
         calculateBBasis: boolean;
         calculateABasis: boolean;
     };
+    inputStructure?: "single" | "min-mean-max"; // UI configuration for input fields
+}
+
+export interface MeasurementStatistics {
+    mean: number;
+    min: number;
+    max: number;
+    stdDev: number;
+    cv: number; // Coefficient of Variation
+    n: number;
+    // New fields for Design Values
+    aValue?: number;
+    bValue?: number;
+    kFactor?: number; // Store the k-factor used?
 }
 
 export interface RequirementRule {
@@ -42,12 +68,16 @@ export interface RequirementProfile {
     name: string; // e.g. "Airbus A350 Interior Spec"
     description: string;
     rules: RequirementRule[];
+    applicability?: string[]; // tags: 'layup', 'material:<type>'
+    document?: MaterialDocument; // Linked PDF
 }
 
 export interface Laboratory {
     id: string;
     name: string;
     authorizedMethods: string[]; // List of Test Method names or IDs
+    city?: string;
+    country?: string;
 }
 
 export interface MaterialDocument {
@@ -60,23 +90,18 @@ export interface MaterialDocument {
 
 export interface Measurement {
     id: string;
+    isActive?: boolean; // Default true if undefined
     materialId?: string; // Optional because it might not be linked yet
     layupId?: string;    // Link to Layup
+    assemblyId?: string; // Link to Assembly
     propertyDefinitionId: string; // Made mandatory
+    orderNumber: string; // Mandatory Order Number
+    referenceNumber?: string; // Optional Reference Number (e.g. Coupon ID)
+    comment?: string; // Optional Comment
 
     values: number[];
     resultValue: number;
-    statistics?: {
-        mean: number;
-        stdDev: number;
-        cv: number;
-        min: number;
-        max: number;
-        n: number;
-        bBasis?: number;
-        aBasis?: number;
-        warnings?: string[];
-    };
+    statistics?: MeasurementStatistics;
 
     unit: string;
     laboratoryId?: string;
@@ -102,13 +127,35 @@ export interface MaterialProperty {
     value: string | number;
     unit: string;
     method?: string; // Selected test method (e.g. ISO 527-4)
-    specification: string; // The context (e.g. "Airbus A350 Spec", "Datasheet 2024")
+    specification: string; // DEPRECATED: Use specificationId
+    specificationId?: string; // Link to MaterialSpecification
+    requirementProfileId?: string; // Link to specific RequirementProfile
+
+    // Optional statistical values if property uses "min-mean-max" structure
+    vMin?: number;
+    vMax?: number;
+    vMean?: number;
+}
+
+export interface MaterialSpecification {
+    id: string;
+    materialId?: string; // Link to Material
+    layupId?: string;    // Link to Layup
+    assemblyId?: string; // Link to Assembly
+    name: string; // e.g. "Datasheet V1", "ABS 5006"
+    code?: string; // Specification Code e.g. "BMS 8-124"
+    revision?: string;
+    status?: string; // "Draft", "Active", "Obsolete"
+    validFrom?: string; // ISO Date
+    documentUrl?: string;
+    description?: string;
+    createdAt?: string;
 }
 
 export interface Allowable {
     id: string;
     parentId: string; // Material ID or Layup ID
-    parentType: 'material' | 'layup';
+    parentType: 'material' | 'layup' | 'assembly';
     name: string;
     value: string;
     unit: string;
@@ -175,6 +222,7 @@ export interface Layup {
     assignedProfileIds?: string[]; // IDs of RequirementProfiles (Standards)
     measurements: Measurement[];
     allowables?: Allowable[];
+    properties?: MaterialProperty[]; // Manual properties specific to this layup
 
     version: number; // Incremented on "edit" (which creates new ID actually, but tracks lineage)
     previousVersionId?: string;
@@ -183,20 +231,51 @@ export interface Layup {
     createdBy: string;
 }
 
+export interface ComponentConfig {
+    coatingThickness?: {
+        min: number;
+        max: number;
+        unit: 'µm';
+    };
+    adhesiveGrammage?: {
+        min: number;
+        max: number;
+        unit: 'g/m²';
+    };
+}
+
 export interface AssemblyComponent {
-    componentType: "layup" | "sub-assembly" | "standard-part";
-    componentId: string;
+    id: string; // Unique instance ID
+    componentType: "layup" | "material"; // Removed sub-assembly for now
+    componentId: string; // ID of the Layup or Material(Variant)
+    componentName: string; // Snapshot name
     quantity: number;
+    sequence: number; // Order in stack
+    // Position removed or kept optional? Let's keep it simple for stack logic
     position?: string;
+    config?: ComponentConfig;
 }
 
 export interface Assembly {
     id: string;
     name: string;
     description: string;
+
+    // Stack
     components: AssemblyComponent[];
+
+    // Process
+    processIds: string[]; // Multiple processes
+
+    // Status
     status: EntityStatus;
+
+    // Quality & Integrity
+    properties: MaterialProperty[]; // Assembly-specific properties
+    assignedProfileIds?: string[]; // IDs of RequirementProfiles
     measurements: Measurement[];
+    allowables?: Allowable[]; // Derived allowables
+
     createdAt: string;
     version: number;
 }

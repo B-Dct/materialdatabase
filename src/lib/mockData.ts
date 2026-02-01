@@ -2,7 +2,7 @@ import type { Material, MaterialVariant, EntityStatus } from '@/types/domain';
 // Helper for realistic data
 const manufacturers = ["Hexcel", "Toray", "Solvay", "Mitsubishi", "Gurit"];
 const types = ["Prepreg", "Resin", "Adhesive", "Core", "Fiber"];
-const statuses: EntityStatus[] = ["standard", "in_review", "blocked", "obsolete"];
+const statuses: EntityStatus[] = ["active", "standard", "restricted", "obsolete", "engineering"];
 
 // Mock Materials
 export const generateMockMaterials = (count: number): Material[] => {

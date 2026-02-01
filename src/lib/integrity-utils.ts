@@ -73,6 +73,6 @@ export function validateStatusTransition(
 }
 
 export function isEditable(status: EntityStatus): boolean {
-    // "Standard" and "Obsolete" are locked.
-    return status !== 'standard' && status !== 'obsolete';
+    // "Obsolete" is locked. "Standard" is now editable per user request.
+    return status !== 'obsolete';
 }

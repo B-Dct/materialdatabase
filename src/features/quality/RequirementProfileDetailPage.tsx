@@ -45,7 +45,8 @@ import {
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { RequirementRuleDialog } from './RequirementRuleDialog'; // New Component
-import { Plus, Pencil } from 'lucide-react';
+import { RequirementProfileDialog } from './RequirementEditorDialog';
+import { Plus, Pencil, Edit } from 'lucide-react';
 import type { RequirementRule } from '@/types/domain';
 
 export function RequirementProfileDetailPage() {
@@ -55,6 +56,7 @@ export function RequirementProfileDetailPage() {
     // Dialog State
     const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
     const [addPropDialogOpen, setAddPropDialogOpen] = useState(false);
+    const [editProfileOpen, setEditProfileOpen] = useState(false);
 
     // Selection State
     const [editingRule, setEditingRule] = useState<RequirementRule | undefined>(undefined);
@@ -145,6 +147,9 @@ export function RequirementProfileDetailPage() {
                         <p className="text-muted-foreground">{profile.description}</p>
                     </div>
                     <div className="flex gap-4 items-center">
+                        <Button variant="outline" onClick={() => setEditProfileOpen(true)}>
+                            <Edit className="mr-2 h-4 w-4" /> Edit Details
+                        </Button>
                         <Button onClick={openAddDialog}>
                             <Plus className="mr-2 h-4 w-4" /> Add Requirement
                         </Button>
@@ -265,6 +270,19 @@ export function RequirementProfileDetailPage() {
                 onSave={handleSaveRule}
                 onDelete={editingRule ? () => handleDeleteRule(editingRule.propertyId) : undefined}
             />
+
+            {/* Profile Logic Edit Dialog */}
+            {editProfileOpen && (
+                <RequirementProfileDialog
+                    open={editProfileOpen}
+                    onOpenChange={setEditProfileOpen}
+                    initialData={profile}
+                    onSave={async (updated) => {
+                        await updateRequirementProfile(profile.id, updated);
+                        setEditProfileOpen(false);
+                    }}
+                />
+            )}
         </div>
     );
 }

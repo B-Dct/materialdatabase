@@ -59,7 +59,8 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
         testMethod: "",
         date: new Date().toISOString().split('T')[0],
         sourceFile: null as File | null,
-        sourceFilename: ""
+        sourceFilename: "",
+        orderNumber: ""
     });
 
     const [sampleCount, setSampleCount] = useState<string>("5");
@@ -139,7 +140,11 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
             // New Fields
             values: mode === 'manual' ? numbers : [],
             resultValue: finalValue,
-            statistics: mode === 'manual' ? stats : undefined,
+            statistics: (mode === 'manual' && stats) ? {
+                ...stats,
+                bValue: stats.bBasis,
+                aValue: stats.aBasis
+            } : undefined,
 
             unit: formData.unit,
             laboratoryId: formData.laboratory || "In-House",
@@ -150,12 +155,13 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
 
             reliability: formData.reliability as any,
             testMethod: formData.testMethod,
+            orderNumber: formData.orderNumber || "Pending",
             processParams: {}
         };
 
         await addMeasurement(newMeasurement);
         setIsOpen(false);
-        setFormData({ ...formData, value: "", sourceFile: null, sourceFilename: "" });
+        setFormData({ ...formData, value: "", sourceFile: null, sourceFilename: "", orderNumber: "" });
         setRawValues(Array(5).fill(""));
         setStats(null);
     };
@@ -252,8 +258,16 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
                                     />
                                 </div>
                             </div>
-                        </div>
 
+                            <div className="space-y-2">
+                                <Label>Order Number</Label>
+                                <Input
+                                    value={formData.orderNumber}
+                                    onChange={e => setFormData({ ...formData, orderNumber: e.target.value })}
+                                    placeholder="e.g. WO-2024-001"
+                                />
+                            </div>
+                        </div>
                         {/* 2. Manual Data Entry */}
                         {mode === "manual" && (
                             <div className="grid grid-cols-3 gap-6">
@@ -374,6 +388,6 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
                     <Button onClick={handleSubmit}>Save Record</Button>
                 </DialogFooter>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }

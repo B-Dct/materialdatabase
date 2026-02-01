@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Save, Plus, ChevronRight } from 'lucide-react';
 import type { EntityStatus } from '@/types/domain';
 import { v4 as uuidv4 } from "uuid";
@@ -23,15 +24,15 @@ interface LayerItem {
 interface LayupStackEditorProps {
     layup?: any; // To be typed properly
     readonly?: boolean;
+    lockStructure?: boolean; // New prop: Locking stack for edits
     onSaveSuccess?: () => void;
 }
 
-export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: LayupStackEditorProps) {
+export function LayupStackEditor({ layup, readonly = false, lockStructure = false, onSaveSuccess }: LayupStackEditorProps) {
     const { addLayup, materials, processes, fetchProcesses, fetchMaterials } = useAppStore();
     const [name, setName] = useState(layup?.name || "");
-    const [status, setStatus] = useState<EntityStatus>(layup?.status || "in_review");
+    const [status, setStatus] = useState<EntityStatus>(layup?.status || "engineering");
     const [processId, setProcessId] = useState<string>(layup?.processId || "");
-    // Removed productionSite state
     const [thickness, setThickness] = useState<number>(layup?.totalThickness || 0);
     const [weight, setWeight] = useState<number>(layup?.totalWeight || 0);
 
@@ -57,7 +58,6 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
             setName(layup.name);
             setStatus(layup.status);
             setProcessId(layup.processId || "");
-            // Removed productionSite set
             setThickness(layup.totalThickness || 0);
             setWeight(layup.totalWeight || 0);
 
@@ -112,6 +112,7 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
     );
 
     const handleDragEnd = (event: DragEndEvent) => {
+        if (readonly || lockStructure) return; // Prevent drag if locked
         const { active, over } = event;
         if (over && active.id !== over.id) {
             setLayers((items) => {
@@ -123,6 +124,7 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
     };
 
     const addLayer = (materialName: string, variantId: string, variantName: string, materialType: string) => {
+        if (readonly || lockStructure) return;
         const newLayer: LayerItem = {
             id: uuidv4(),
             variantId: variantId,
@@ -134,10 +136,12 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
     };
 
     const removeLayer = (id: string) => {
+        if (readonly || lockStructure) return;
         setLayers(layers.filter(l => l.id !== id));
     };
 
     const updateOrientation = (id: string, newOri: number) => {
+        if (readonly || lockStructure) return;
         setLayers(layers.map(l => l.id === id ? { ...l, orientation: newOri } : l));
     };
 
@@ -221,7 +225,11 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                     Actually `layup` is passed even for create? Usually yes.
                     If passed layup has an ID, it's existing. 
                 */}
-                {(!layup?.id && !readonly) && (
+                {/* 
+                    UPDATED: Allow stack editing if not readonly.
+                */}
+                {/* LEFT: Material Library - Hidden if locked/readonly */}
+                {(!readonly && !lockStructure) && (
                     <div className="col-span-4 flex flex-col h-full gap-6 overflow-hidden">
                         {/* Material Selection - Shrinks if material selected */}
                         <Card className={`flex flex-col overflow-hidden transition-all duration-300 ${selectedMaterialId ? "h-[9rem] min-h-[9rem]" : "h-full"}`}>
@@ -311,20 +319,20 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                 )}
 
                 {/* RIGHT: Stacking & Config */}
-                {/* Expand col-span if library is hidden */}
-                <div className={`${(!layup?.id && !readonly) ? 'col-span-8' : 'col-span-12'} flex flex-col h-full gap-6 overflow-hidden`}>
+                {/* Expand col-span if library is hidden (readonly or lockStructure) */}
+                <div className={`${(!readonly && !lockStructure) ? 'col-span-8' : 'col-span-12'} flex flex-col h-full gap-6 overflow-hidden`}>
                     {/* Top: Metadata */}
                     <Card>
                         <CardContent className="p-4 grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 {/* Name is LOCKED if exists */}
                                 <label className="text-sm font-medium">Layup Name</label>
-                                {readonly || layup?.id ? (
+                                {readonly ? (
                                     <div className="text-sm border rounded-md px-3 py-2 bg-muted/20 text-muted-foreground cursor-not-allowed" title="Name cannot be changed after creation.">
                                         {name}
                                     </div>
                                 ) : (
-                                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Wing Skin Upper" />
+                                    <Input value={name} onChange={e => setName(e.target.value)} disabled={!!layup} placeholder="e.g. Wing Skin Upper" title={layup ? "Name locked on edit" : ""} />
                                 )}
                             </div>
                             <div className="space-y-2">
@@ -352,13 +360,7 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                                 <label className="text-sm font-medium">Status</label>
                                 {readonly ? (
                                     <div className="flex items-center h-10">
-                                        <Badge variant={
-                                            status === 'standard' || status === 'active' || status === 'approved' ? 'default' :
-                                                status === 'blocked' || status === 'restricted' ? 'destructive' :
-                                                    status === 'obsolete' ? 'outline' : 'secondary'
-                                        }>
-                                            {status}
-                                        </Badge>
+                                        <StatusBadge status={status} />
                                     </div>
                                 ) : (
                                     <div className="flex gap-4 items-center">
@@ -367,11 +369,11 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="in_review"><Badge variant="secondary">In Review</Badge></SelectItem>
-                                                <SelectItem value="active"><Badge variant="default" className="bg-blue-600 hover:bg-blue-700">Active</Badge></SelectItem>
-                                                <SelectItem value="standard"><Badge variant="default">Standard</Badge></SelectItem>
-                                                <SelectItem value="restricted"><Badge variant="destructive">Restricted</Badge></SelectItem>
-                                                <SelectItem value="obsolete"><Badge variant="outline">Obsolete</Badge></SelectItem>
+                                                <SelectItem value="active"><StatusBadge status="active" /></SelectItem>
+                                                <SelectItem value="standard"><StatusBadge status="standard" /></SelectItem>
+                                                <SelectItem value="restricted"><StatusBadge status="restricted" /></SelectItem>
+                                                <SelectItem value="obsolete"><StatusBadge status="obsolete" /></SelectItem>
+                                                <SelectItem value="engineering"><StatusBadge status="engineering" /></SelectItem>
                                             </SelectContent>
                                         </Select>
                                         <div className="flex-1 flex justify-end">
@@ -434,7 +436,10 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                     <Card className="min-h-[300px] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900/50">
                         <CardHeader className="pb-2 border-b">
                             <div className="flex justify-between items-center">
-                                <CardTitle className="text-base">Stack Sequence {layup?.id && "(Locked)"}</CardTitle>
+                                <CardTitle className="text-base">
+                                    Stack Sequence
+                                    {lockStructure && <span className="text-xs font-normal text-muted-foreground ml-2">(Locked)</span>}
+                                </CardTitle>
                                 <div className="flex items-center gap-3">
                                     <Badge variant="outline">{layers.length} Layers</Badge>
                                 </div>
@@ -451,7 +456,7 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                                         <div className="h-full flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg">
                                             <ChevronRight className="h-12 w-12 mb-4 opacity-20" />
                                             <p>Stack is empty.</p>
-                                            {!layup?.id && <p className="text-sm">Select a material and add variants.</p>}
+                                            {(!readonly && !lockStructure) && <p className="text-sm">Select a material and add variants.</p>}
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
@@ -462,8 +467,8 @@ export function LayupStackEditor({ layup, readonly = false, onSaveSuccess }: Lay
                                                     index={index}
                                                     onRemove={removeLayer}
                                                     onOrientationChange={updateOrientation}
-                                                    // ALWAYS READONLY if ID exists
-                                                    readonly={readonly || !!layup?.id}
+                                                    // Readonly only if prop is true
+                                                    readonly={readonly || lockStructure}
                                                 />
                                             ))}
                                         </div>

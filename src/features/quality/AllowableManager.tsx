@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 
 interface AllowableManagerProps {
     parentId: string;
-    parentType: 'material' | 'layup';
+    parentType: 'material' | 'layup' | 'assembly';
     allowables: Allowable[];
     availableMeasurements: Measurement[]; // Must pass available measurements for linking
 }
