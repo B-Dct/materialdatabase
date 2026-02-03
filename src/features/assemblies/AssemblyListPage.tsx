@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Plus, Eye } from 'lucide-react';
-import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@tanstack/react-table';
@@ -49,11 +48,7 @@ export function AssemblyListPage() {
                 return <StatusBadge status={status} />;
             },
         },
-        {
-            accessorKey: "version",
-            header: "Version",
-            cell: ({ row }) => <Badge variant="outline">v{row.getValue("version")}</Badge>,
-        },
+
         {
             accessorKey: "description",
             header: "Description",

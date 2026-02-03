@@ -3,9 +3,8 @@ import { useParams } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler } from "lucide-react";
+import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
 import { AssemblyStackEditor } from "./AssemblyStackEditor";
@@ -43,33 +42,32 @@ export function AssemblyDetailPage() {
     return (
         <div className="h-full flex flex-col overflow-hidden animate-in fade-in">
             {/* Header */}
-            <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate('/assemblies')}>
-                        <ArrowLeft className="h-5 w-5" />
-                    </Button>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-xl font-bold tracking-tight">{assembly.name}</h1>
-                            <StatusBadge status={assembly.status} />
-                            <Badge variant="outline" className="font-mono">v{assembly.version}</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-1 max-w-2xl">
-                            {assembly.description || "No description provided."}
-                        </p>
+            {/* Header */}
+            <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 py-4 flex items-center justify-between shrink-0">
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => navigate('/assemblies')}>
+                            <ArrowLeft className="h-4 w-4" />
+                        </Button>
+                        <h1 className="text-xl font-bold tracking-tight">{assembly.name}</h1>
+                        <StatusBadge status={assembly.status} className="ml-1" />
                     </div>
-                    {/* Edit Toggle */}
-                    <div className="ml-auto flex items-center gap-2">
-                        {!isEditing ? (
-                            <Button onClick={() => setIsEditing(true)}>
-                                Edit Details
-                            </Button>
-                        ) : (
-                            <Button variant="outline" onClick={() => setIsEditing(false)}>
-                                Cancel Editing
-                            </Button>
-                        )}
-                    </div>
+                    <p className="text-sm text-muted-foreground pl-8 max-w-2xl line-clamp-1">
+                        {assembly.description || "No description provided."}
+                    </p>
+                </div>
+
+                {/* Edit Toggle */}
+                <div className="flex items-center gap-2">
+                    {!isEditing ? (
+                        <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
+                        </Button>
+                    ) : (
+                        <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>
+                            Cancel Editing
+                        </Button>
+                    )}
                 </div>
             </div>
 
