@@ -1,24 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
-import { Input } from "@/components/ui/input";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Power } from "lucide-react";
+import { FileText, Power, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DataTable } from "@/components/ui/data-table";
+import type { ColumnDef } from "@tanstack/react-table";
+import { format } from "date-fns";
 
 export function MeasurementsPage() {
     const { measurements, fetchMeasurements, materials, properties, fetchMaterials, fetchProperties, updateMeasurement } = useAppStore();
     const navigate = useNavigate();
-    const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
         fetchMeasurements();
@@ -26,126 +18,145 @@ export function MeasurementsPage() {
         fetchProperties();
     }, [fetchMeasurements, fetchMaterials, fetchProperties]);
 
-    const filtered = measurements.filter(m => {
-        const prop = properties.find(p => p.id === m.propertyDefinitionId);
-        const mat = materials.find(mat => mat.id === m.materialId);
-        const search = searchTerm.toLowerCase();
+    const data = useMemo(() => {
+        return measurements.map(m => {
+            const prop = properties.find(p => p.id === m.propertyDefinitionId);
+            const mat = materials.find(mat => mat.id === m.materialId);
+            return {
+                ...m,
+                _materialName: mat?.name || "Unlinked",
+                _propertyName: prop?.name || m.propertyDefinitionId,
+                _isActive: m.isActive !== false
+            };
+        });
+    }, [measurements, properties, materials]);
 
-        return (
-            prop?.name.toLowerCase().includes(search) ||
-            mat?.name.toLowerCase().includes(search) ||
-            m.sourceFilename?.toLowerCase().includes(search) ||
-            m.testMethod?.toLowerCase().includes(search)
-        );
-    });
+    const columns: ColumnDef<any>[] = [
+        {
+            accessorKey: "_isActive",
+            header: "Status",
+            cell: ({ row }) => {
+                const isActive = row.original._isActive;
+                return (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`h-6 w-6 p-0 rounded-full ${isActive ? "text-green-600 hover:text-green-700 hover:bg-green-100" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            updateMeasurement(row.original.id, { isActive: !isActive });
+                        }}
+                        title={isActive ? "Deactivate Measurement" : "Activate Measurement"}
+                    >
+                        <Power className="h-3.5 w-3.5" />
+                    </Button>
+                );
+            },
+            filterFn: (row, id, value) => {
+                const isActive = row.getValue(id) as boolean;
+                // value is array of strings e.g. ["active", "inactive"]
+                if (value.includes("active") && isActive) return true;
+                if (value.includes("inactive") && !isActive) return true;
+                return false;
+            }
+        },
+        {
+            accessorKey: "date",
+            header: "Date",
+            cell: ({ row }) => format(new Date(row.getValue("date")), "dd.MM.yyyy"),
+            sortingFn: "datetime",
+        },
+        {
+            accessorKey: "_materialName",
+            header: "Material",
+            cell: ({ row }) => (
+                row.original.materialId ? (
+                    <Badge variant="outline" className="font-mono">
+                        {row.getValue("_materialName")}
+                    </Badge>
+                ) : <span className="text-muted-foreground italic text-sm">Unlinked</span>
+            ),
+        },
+        {
+            accessorKey: "_propertyName",
+            header: "Property",
+            cell: ({ row }) => <span className="font-medium">{row.getValue("_propertyName")}</span>,
+        },
+        {
+            accessorKey: "resultValue",
+            header: "Value",
+            cell: ({ row }) => (
+                <span>
+                    {Number(row.getValue("resultValue")).toFixed(2)} <span className="text-muted-foreground text-xs">{row.original.unit}</span>
+                </span>
+            ),
+        },
+        {
+            accessorKey: "testMethod",
+            header: "Method",
+            cell: ({ row }) => row.getValue("testMethod") || "-",
+        },
+        {
+            accessorKey: "sourceType", // For filtering
+            header: "Source",
+            cell: ({ row }) => {
+                const m = row.original;
+                return m.sourceType === "pdf" ? (
+                    <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
+                        <FileText className="h-4 w-4" />
+                        <span className="truncate max-w-[100px]">{m.sourceFilename || "Report.pdf"}</span>
+                    </div>
+                ) : (
+                    <span className="text-muted-foreground text-xs">Manual Entry</span>
+                );
+            }
+        },
+        {
+            accessorKey: "laboratoryId",
+            header: "Lab",
+            cell: ({ row }) => <span className="text-muted-foreground text-sm">{row.getValue("laboratoryId")}</span>,
+        },
+        // Hidden search column
+        {
+            id: "_search",
+            accessorFn: (row) => `${row._materialName} ${row._propertyName} ${row.sourceFilename || ''} ${row.testMethod || ''} ${row.laboratoryId || ''}`.toLowerCase(),
+            header: () => null,
+            cell: () => null,
+            enableHiding: true,
+        },
+
+    ];
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="h-full flex flex-col p-8 space-y-8 animate-in fade-in duration-500">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Measurements</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Measurements</h1>
                     <p className="text-muted-foreground">Manage laboratory test reports and data points.</p>
                 </div>
                 <Button onClick={() => navigate("/measurements/new")}>
-                    <FileText className="mr-2 h-4 w-4" /> Add Measurement
+                    <Plus className="mr-2 h-4 w-4" /> Add Measurement
                 </Button>
             </div>
 
-            <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle>All Reports</CardTitle>
-                    <CardDescription>
-                        Total {filtered.length} measurements found.
-                    </CardDescription>
-                    <div className="pt-2">
-                        <Input
-                            placeholder="Search by property, material, or file..."
-                            className="max-w-sm"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[80px]">Status</TableHead>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Material</TableHead>
-                                <TableHead>Property</TableHead>
-                                <TableHead>Value</TableHead>
-                                <TableHead>Method</TableHead>
-                                <TableHead>Source</TableHead>
-                                <TableHead>Lab</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filtered.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
-                                        No measurements found.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {filtered.map((m) => {
-                                const prop = properties.find(p => p.id === m.propertyDefinitionId);
-                                const mat = materials.find(mat => mat.id === m.materialId);
-                                const isActive = m.isActive !== false;
-
-                                return (
-                                    <TableRow key={m.id} className={!isActive ? "opacity-60 bg-muted/50" : ""}>
-                                        <TableCell>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className={`h-6 w-6 p-0 rounded-full ${isActive ? "text-green-600 hover:text-green-700 hover:bg-green-100" : "text-muted-foreground hover:text-foreground"}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    updateMeasurement(m.id, { isActive: !isActive });
-                                                }}
-                                                title={isActive ? "Deactivate Measurement" : "Activate Measurement"}
-                                            >
-                                                <Power className="h-3.5 w-3.5" />
-                                            </Button>
-                                        </TableCell>
-                                        <TableCell>{new Date(m.date).toLocaleDateString()}</TableCell>
-                                        <TableCell>
-                                            {mat ? (
-                                                <Badge variant="outline" className="font-mono">
-                                                    {mat.name}
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-muted-foreground italic text-sm">Unlinked</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="font-medium">
-                                            {prop?.name || m.propertyDefinitionId}
-                                        </TableCell>
-                                        <TableCell>
-                                            {m.resultValue} <span className="text-muted-foreground text-xs">{m.unit}</span>
-                                        </TableCell>
-                                        <TableCell>{m.testMethod || "-"}</TableCell>
-                                        <TableCell>
-                                            {m.sourceType === "pdf" ? (
-                                                <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
-                                                    <FileText className="h-4 w-4" />
-                                                    <span className="truncate max-w-[100px]">{m.sourceFilename || "Report.pdf"}</span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-muted-foreground text-xs">Manual Entry</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground text-sm">
-                                            {m.laboratoryId}
-                                        </TableCell>
-                                    </TableRow>
-                                );
-                            })}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <div className="flex-1 overflow-hidden border rounded-md p-4">
+                <DataTable
+                    columns={columns}
+                    data={data}
+                    enableGlobalFilter={true}
+                    filterPlaceholder="Search measurements..."
+                    facetedFilters={[
+                        {
+                            column: "_isActive",
+                            title: "Status",
+                            options: [
+                                { label: "Active", value: "active" },
+                                { label: "Inactive", value: "inactive" }
+                            ]
+                        }
+                    ]}
+                />
+            </div>
         </div>
     );
 }
