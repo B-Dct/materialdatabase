@@ -98,7 +98,8 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
 
     // Filtered Materials List
     const filteredMaterials = (materials || []).filter(m =>
-        (m.name || "").toLowerCase().includes(searchTerm.toLowerCase())
+        (m.name || "").toLowerCase().includes(searchTerm.toLowerCase()) &&
+        !['restricted', 'obsolete'].includes(m.status)
     );
 
     // Get selected material and its variants

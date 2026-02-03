@@ -237,7 +237,10 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
                                         <div className="flex-1 overflow-auto">
                                             <div className="divide-y relative">
                                                 {materials
-                                                    .filter(m => m.name.toLowerCase().includes(matSearch.toLowerCase()))
+                                                    .filter(m =>
+                                                        m.name.toLowerCase().includes(matSearch.toLowerCase()) &&
+                                                        !['restricted', 'obsolete'].includes(m.status)
+                                                    )
                                                     .map(m => (
                                                         <div
                                                             key={m.id}
@@ -306,7 +309,10 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
                                 </div>
                                 <div className="divide-y">
                                     {layups
-                                        .filter(l => l.name.toLowerCase().includes(layupSearch.toLowerCase()))
+                                        .filter(l =>
+                                            l.name.toLowerCase().includes(layupSearch.toLowerCase()) &&
+                                            !['restricted', 'obsolete'].includes(l.status)
+                                        )
                                         .map(l => (
                                             <div key={l.id} className="p-3 hover:bg-muted/50 flex justify-between items-center">
                                                 <div className="flex flex-col">
