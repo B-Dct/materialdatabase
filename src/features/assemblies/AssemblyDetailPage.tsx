@@ -26,6 +26,7 @@ export function AssemblyDetailPage() {
     } = useAppStore();
 
     const [activeTab, setActiveTab] = useState("overview");
+    const [isEditing, setIsEditing] = useState(false);
 
 
     useEffect(() => {
@@ -56,6 +57,18 @@ export function AssemblyDetailPage() {
                         <p className="text-sm text-muted-foreground line-clamp-1 max-w-2xl">
                             {assembly.description || "No description provided."}
                         </p>
+                    </div>
+                    {/* Edit Toggle */}
+                    <div className="ml-auto flex items-center gap-2">
+                        {!isEditing ? (
+                            <Button onClick={() => setIsEditing(true)}>
+                                Edit Details
+                            </Button>
+                        ) : (
+                            <Button variant="outline" onClick={() => setIsEditing(false)}>
+                                Cancel Editing
+                            </Button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -95,8 +108,12 @@ export function AssemblyDetailPage() {
                         <TabsContent value="overview" className="h-full m-0">
                             <AssemblyStackEditor
                                 assembly={assembly}
-                                readonly={true}
-                                onSaveSuccess={() => fetchAssemblies()}
+                                readonly={!isEditing}
+                                lockStructure={!!assembly}
+                                onSaveSuccess={() => {
+                                    setIsEditing(false);
+                                    fetchAssemblies();
+                                }}
                             />
                         </TabsContent>
 

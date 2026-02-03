@@ -41,10 +41,11 @@ interface ComponentItem {
 interface AssemblyStackEditorProps {
     assembly?: Assembly;
     readonly?: boolean;
+    lockStructure?: boolean;
     onSaveSuccess?: () => void;
 }
 
-export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess }: AssemblyStackEditorProps) {
+export function AssemblyStackEditor({ assembly, readonly = false, lockStructure = false, onSaveSuccess }: AssemblyStackEditorProps) {
     const { addAssembly, updateAssembly, materials, layups, fetchMaterials, fetchLayups } = useAppStore();
 
     // Form State
@@ -108,7 +109,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
     const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor));
 
     const handleDragEnd = (event: DragEndEvent) => {
-        if (readonly) return;
+        if (readonly || lockStructure) return;
         const { active, over } = event;
         if (over && active.id !== over.id) {
             setComponents((items) => {
@@ -120,7 +121,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
     };
 
     const addComponent = (type: 'layup' | 'material', id: string, name: string) => {
-        if (readonly) return;
+        if (readonly || lockStructure) return;
 
         // Derive material type if it's a material
         let matTypeString = "";
@@ -153,12 +154,14 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
     };
 
     const removeComponent = (id: string) => {
-        if (readonly) return;
+        if (readonly || lockStructure) return;
         setComponents(components.filter(c => c.id !== id));
     };
 
     const handleSave = async () => {
         if (!name) return alert("Name is required");
+        // Only check quantity if NOT existing or structure not locked? 
+        // Actually structure must exist.
         if (components.length === 0) return alert("Add at least one component");
 
         const payloadComponents = components.map((c, idx) => ({
@@ -177,8 +180,9 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
                     name,
                     description,
                     status,
-                    processIds,
-                    components: payloadComponents as any // Cast for store compatibility
+                    processIds, // Will be ignored by backend if we don't send it? 
+                    // Actually if lockStructure is true, processIds might not change, but we send current state.
+                    components: payloadComponents as any
                 });
             } else {
                 await addAssembly({
@@ -208,13 +212,20 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
 
     const handleUpdateComponent = (id: string, updates: Partial<ComponentItem>) => {
+        // Allow updates to config? User said "Structure ... not editable".
+        // Maybe quantity/position? 
+        // "Things like Maunfacturing processes and Layup should NOT be editable".
+        // "Layup" probably means "Composition".
+        // I'll assume config updates are allowed? Or locked too?
+        // Safest is to lock everything related to structure.
+        if (readonly || lockStructure) return;
         setComponents(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     };
 
     return (
         <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)]">
             {/* LEFT: Library */}
-            {!readonly && (
+            {!readonly && !lockStructure && (
                 <div className="col-span-4 flex flex-col h-full overflow-hidden">
                     <Card className="h-full flex flex-col transition-all duration-500 ease-in-out">
                         <CardHeader className="pb-2">
@@ -332,7 +343,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
             )}
 
             {/* RIGHT: Stack Editor */}
-            <div className={readonly ? "col-span-12" : "col-span-8"}>
+            <div className={readonly || lockStructure ? "col-span-12" : "col-span-8"}>
                 <div className="flex flex-col h-full gap-4">
                     {/* Header Controls */}
                     <Card>
@@ -363,12 +374,16 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
                                     </div>
                                 )}
                             </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Description</label>
+                                <Input disabled={readonly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Short description..." />
+                            </div>
                             <div className="col-span-2 space-y-2">
                                 <label className="text-sm font-medium">Applicable Processes</label>
                                 <MultiProcessSelector
                                     selectedIds={processIds}
                                     onChange={setProcessIds}
-                                    readonly={readonly}
+                                    readonly={readonly || lockStructure}
                                 />
                             </div>
                         </CardContent>
@@ -379,6 +394,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
                         <CardHeader className="pb-2 border-b">
                             <CardTitle className="text-base flex justify-between">
                                 Assembly Structure
+                                {lockStructure && <span className="text-xs font-normal text-muted-foreground ml-2">(Locked)</span>}
                                 <Badge variant="outline">{components.length} Components</Badge>
                             </CardTitle>
                         </CardHeader>
@@ -400,7 +416,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, onSaveSuccess 
                                                 <SortableComponentItem
                                                     key={comp.id}
                                                     {...comp}
-                                                    readonly={readonly}
+                                                    readonly={readonly || lockStructure}
                                                     onRemove={removeComponent}
                                                     onUpdate={handleUpdateComponent}
                                                 />
