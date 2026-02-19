@@ -1,16 +1,43 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Beaker, FileText, AlertTriangle } from "lucide-react";
-// import { useAppStore } from "@/lib/store";
+import { Activity, Beaker, FileText, Layers } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export function DashboardPage() {
-    // Mock Data integration later
-    // const { materials, layups } = useAppStore();
+    const [stats, setStats] = useState({
+        materials: 0,
+        layups: 0,
+        assemblies: 0,
+        measurements: 0
+    });
+    const [loading, setLoading] = useState(true);
 
-    // Placeholder stats
-    // const stats = [
-    //    { label: "Total Materials", value: "124", icon: Beaker, desc: "Active in database" },
-    // ];
+    useEffect(() => {
+        async function loadStats() {
+            setLoading(true);
+            try {
+                const [mat, lay, ass, meas] = await Promise.all([
+                    supabase.from('materials').select('*', { count: 'exact', head: true }),
+                    supabase.from('layups').select('*', { count: 'exact', head: true }),
+                    supabase.from('assemblies').select('*', { count: 'exact', head: true }),
+                    supabase.from('measurements').select('*', { count: 'exact', head: true })
+                ]);
+
+                setStats({
+                    materials: mat.count || 0,
+                    layups: lay.count || 0,
+                    assemblies: ass.count || 0,
+                    measurements: meas.count || 0
+                });
+            } catch (e) {
+                console.error("Failed to load stats", e);
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadStats();
+    }, []);
 
     return (
         <div className="p-8 space-y-8 animate-in fade-in duration-500">
@@ -26,38 +53,38 @@ export function DashboardPage() {
                         <Beaker className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">124</div>
-                        <p className="text-xs text-muted-foreground">+4 from last week</p>
+                        <div className="text-2xl font-bold">{loading ? "..." : stats.materials}</div>
+                        <p className="text-xs text-muted-foreground">Active in database</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Layups Defined</CardTitle>
+                        <Layers className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{loading ? "..." : stats.layups}</div>
+                        <p className="text-xs text-muted-foreground">Composite stacks</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Assemblies</CardTitle>
                         <Activity className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">42</div>
-                        <p className="text-xs text-muted-foreground">12 Active, 3 Obsolete</p>
+                        <div className="text-2xl font-bold">{loading ? "..." : stats.assemblies}</div>
+                        <p className="text-xs text-muted-foreground">Complex parts</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Pending Reviews</CardTitle>
-                        <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">5</div>
-                        <p className="text-xs text-muted-foreground">Requires Engineer Sign-off</p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">New Imports</CardTitle>
+                        <CardTitle className="text-sm font-medium">Measurements</CardTitle>
                         <FileText className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">12</div>
-                        <p className="text-xs text-muted-foreground">PDF Reports uploaded</p>
+                        <div className="text-2xl font-bold">{loading ? "..." : stats.measurements}</div>
+                        <p className="text-xs text-muted-foreground">Test results recorded</p>
                     </CardContent>
                 </Card>
             </div>
@@ -66,23 +93,10 @@ export function DashboardPage() {
                 <Card className="col-span-4">
                     <CardHeader>
                         <CardTitle>Recent Activity</CardTitle>
-                        <CardDescription>Latest changes to materials and layups.</CardDescription>
+                        <CardDescription>Latest changes system-wide.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-4">
-                            {[1, 2, 3].map(i => (
-                                <div key={i} className="flex items-center">
-                                    <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center border mr-4 text-xs font-bold text-primary">
-                                        M
-                                    </div>
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-medium leading-none">Updated "Carbon Prepreg T800"</p>
-                                        <p className="text-sm text-muted-foreground">Changed cure cycle parameters.</p>
-                                    </div>
-                                    <div className="ml-auto font-medium text-xs text-muted-foreground">2h ago</div>
-                                </div>
-                            ))}
-                        </div>
+                        <p className="text-sm text-muted-foreground">Activity logs coming soon...</p>
                     </CardContent>
                 </Card>
                 <Card className="col-span-3">
@@ -97,8 +111,8 @@ export function DashboardPage() {
                                 <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">Online</Badge>
                             </div>
                             <div className="flex items-center justify-between text-sm">
-                                <span>Storage</span>
-                                <span className="text-muted-foreground">45% Used</span>
+                                <span>DB Sync</span>
+                                <span className="text-muted-foreground">Real-time</span>
                             </div>
                         </div>
                     </CardContent>

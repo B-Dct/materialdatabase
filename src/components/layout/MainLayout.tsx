@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Layers as LayersIcon, Atom, Settings, ClipboardList, Menu, Activity, FlaskConical } from "lucide-react";
+import { LayoutDashboard, Layers as LayersIcon, Atom, Settings, ClipboardList, Menu, Activity, FlaskConical, Nut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -32,6 +32,7 @@ export function MainLayout() {
         { href: "/materials", label: "Materials", icon: Atom },
         { href: "/layups", label: "Layups", icon: LayersIcon },
         { href: "/assemblies", label: "Assemblies", icon: LayersIcon },
+        { href: "/parts", label: "Standard Parts", icon: Nut },
         { href: "/quality/analysis", label: "Analysis", icon: Activity },
     ];
 

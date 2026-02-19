@@ -138,11 +138,27 @@ export function MaterialPropertiesView({ material, measurements }: MaterialPrope
             specValues: Record<string, MaterialProperty>, // SpecID -> Value
         }>();
 
+        // Helper: Aggressive normalization for method matching (e.g. "ISO-1183" == "ISO 1183")
+        const normalizeMethodString = (s: string) => {
+            if (!s) return "";
+            return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+        };
+
         // Helper to get/init row
         const getRow = (name: string, unit: string, method: string = "") => {
-            const key = `${name}|${method}`;
+            const rawMethod = (method || "").trim();
+            const normalizedMethodKey = normalizeMethodString(rawMethod);
+            const normalizedName = name.trim();
+
+            // Try to align name with global definition to handle faint mismatches
+            const propDef = globalProperties.find(p => p.name.toLowerCase() === normalizedName.toLowerCase());
+            const finalName = propDef ? propDef.name : normalizedName;
+
+            // Use normalized method key for grouping, but keep rawMethod for first display
+            const key = `${finalName}|${normalizedMethodKey}`;
+
             if (!rows.has(key)) {
-                rows.set(key, { id: key, name, method, unit, stdValues: {}, specValues: {} });
+                rows.set(key, { id: key, name: finalName, method: rawMethod, unit, stdValues: {}, specValues: {} });
             }
             return rows.get(key)!;
         };
@@ -193,7 +209,52 @@ export function MaterialPropertiesView({ material, measurements }: MaterialPrope
             }
         });
 
-        return Array.from(rows.values()).sort((a, b) => {
+        const rawRows = Array.from(rows.values());
+
+        // Post-Processing: Merge "Empty Method" rows into "Specific Method" rows if unambiguous
+        // Group by Name
+        const byName = new Map<string, typeof rawRows>();
+        rawRows.forEach(r => {
+            if (!byName.has(r.name)) byName.set(r.name, []);
+            byName.get(r.name)!.push(r);
+        });
+
+        const finalRows: typeof rawRows = [];
+
+        byName.forEach((groupRows) => {
+            const emptyMethodRow = groupRows.find(r => !r.method);
+            const specificMethodRows = groupRows.filter(r => !!r.method);
+
+            if (emptyMethodRow && specificMethodRows.length === 1) {
+                // Merge Empty into Specific
+                const specific = specificMethodRows[0];
+
+                // Merge Standard Values (Rule for Empty applies to Specific)
+                Object.entries(emptyMethodRow.stdValues).forEach(([profileId, rule]) => {
+                    if (!specific.stdValues[profileId]) {
+                        specific.stdValues[profileId] = rule;
+                    }
+                });
+
+                // Merge Spec Values
+                Object.entries(emptyMethodRow.specValues).forEach(([specId, val]) => {
+                    if (!specific.specValues[specId]) {
+                        specific.specValues[specId] = val;
+                    }
+                });
+
+                // Merge Unit (if specific missing)
+                if (!specific.unit && emptyMethodRow.unit) specific.unit = emptyMethodRow.unit;
+
+                // Push only specific
+                finalRows.push(specific);
+            } else {
+                // Keep all
+                groupRows.forEach(r => finalRows.push(r));
+            }
+        });
+
+        return finalRows.sort((a, b) => {
             // 1. Sort by Category
             const catA = globalProperties.find(p => p.name === a.name)?.category || 'other';
             const catB = globalProperties.find(p => p.name === b.name)?.category || 'other';

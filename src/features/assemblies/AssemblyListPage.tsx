@@ -1,20 +1,18 @@
 import { useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Plus, Eye } from 'lucide-react';
+import { Plus, Eye, Activity, Check, X } from 'lucide-react';
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { DataTable } from '@/components/ui/data-table';
+import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'; // Added import
 import { type ColumnDef } from '@tanstack/react-table';
 import { type Assembly } from '@/types/domain';
 import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
 
 export function AssemblyListPage() {
     const navigate = useNavigate();
     const { assemblies, layups, fetchAssemblies, fetchLayups } = useAppStore();
-
-
-    // Removing old state vars
-
 
     useEffect(() => {
         fetchAssemblies();
@@ -34,25 +32,84 @@ export function AssemblyListPage() {
         };
     });
 
+    // Default Sort: Newest First
+    const sortedAssemblies = [...assembliesWithSearch].sort((a, b) => {
+        // Validation: Some assemblies might not have createdAt if migrated poorly? 
+        // Assembly interface should have it. fallback to 0.
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+    });
+
     const columns: ColumnDef<Assembly>[] = [
         {
             accessorKey: "name",
-            header: "Name",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
             cell: ({ row }) => <div className="font-medium">{row.getValue("name")}</div>,
+            enableSorting: true,
         },
         {
             accessorKey: "status",
-            header: "Status",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
             cell: ({ row }) => {
                 const status = row.getValue("status") as string;
                 return <StatusBadge status={status} />;
             },
+            enableSorting: true,
+            filterFn: (row, id, value) => {
+                return value.includes(row.getValue(id))
+            },
         },
-
         {
             accessorKey: "description",
-            header: "Description",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Description" />,
             cell: ({ row }) => <div className="text-muted-foreground truncate max-w-[300px]">{row.getValue("description")}</div>,
+            enableSorting: true,
+        },
+        {
+            accessorKey: "createdAt",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+            cell: ({ row }) => {
+                const date = row.getValue("createdAt") as string;
+                if (!date) return '-';
+                return format(new Date(date), 'dd.MM.yyyy');
+            },
+            enableSorting: true,
+        },
+        {
+            id: "measurements",
+            accessorFn: (row) => row.measurements?.length || 0,
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Measurements" />,
+            cell: ({ row }) => {
+                const count = row.getValue("measurements") as number;
+                return (
+                    <div className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                        <span>{count}</span>
+                    </div>
+                );
+            },
+            enableSorting: true,
+        },
+        {
+            id: "allowables",
+            accessorFn: (row) => (row.allowables?.length || 0) > 0,
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Allowables" />,
+            cell: ({ row }) => {
+                const hasAllowables = row.getValue("allowables") as boolean;
+                return hasAllowables ? (
+                    <div className="flex items-center text-green-600">
+                        <Check className="h-4 w-4 mr-1" />
+                        <span className="text-xs font-medium">Yes</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center text-muted-foreground/30">
+                        <X className="h-4 w-4 mr-1" />
+                        <span className="text-xs">No</span>
+                    </div>
+                );
+            },
+            enableSorting: true,
         },
         // Hidden Search Column
         {
@@ -90,7 +147,7 @@ export function AssemblyListPage() {
             <div className="flex-1 overflow-hidden border rounded-md p-4">
                 <DataTable
                     columns={columns}
-                    data={assembliesWithSearch}
+                    data={sortedAssemblies}
                     enableGlobalFilter={true}
                     filterPlaceholder="Search assemblies, sub-components..."
                     facetedFilters={[

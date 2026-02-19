@@ -1,12 +1,11 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { DataTable } from '@/components/ui/data-table';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Plus, MessageSquare, Power, Undo2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Plus, MessageSquare, Power, ArrowUpDown, FileText } from 'lucide-react';
 import {
     Tooltip,
     TooltipContent,
@@ -61,18 +60,24 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
 
     const columns: ColumnDef<any>[] = [
         {
-            accessorKey: "referenceNumber",
-            header: "Ref #",
-            cell: ({ row }) => (
-                <div className="font-mono text-xs text-muted-foreground flex items-center gap-2">
-                    {row.getValue("referenceNumber") || "-"}
-                    {!row.original._isActive && <Badge variant="outline" className="text-[10px] h-4">Inactive</Badge>}
-                </div>
-            )
+            accessorKey: "date",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Date
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => format(new Date(row.getValue("date")), "dd.MM.yyyy"),
+            sortingFn: "datetime",
         },
         {
             accessorKey: "orderNumber",
-            header: "Order #",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Order #
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: ({ row }) => (
                 <div className="font-mono text-xs flex items-center gap-2">
                     {row.getValue("orderNumber") || "N/A"}
@@ -94,14 +99,27 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
             )
         },
         {
-            accessorKey: "date",
-            header: "Date",
-            cell: ({ row }) => format(new Date(row.getValue("date")), "dd.MM.yyyy"),
-            sortingFn: "datetime",
+            accessorKey: "referenceNumber",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Ref #
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => (
+                <div className="font-mono text-xs text-muted-foreground flex items-center gap-2">
+                    {row.getValue("referenceNumber") || "-"}
+                </div>
+            )
         },
         {
             accessorKey: "_propertyName",
-            header: "Property",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Property
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: ({ row }) => (
                 <span className="font-medium">
                     {row.getValue("_propertyName")}
@@ -113,7 +131,12 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
         },
         {
             accessorKey: "resultValue",
-            header: "Value",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Value
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: ({ row }) => (
                 <span className={!row.original._isActive ? "line-through text-muted-foreground" : ""}>
                     {Number(row.getValue("resultValue")).toFixed(2)}
@@ -121,66 +144,72 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
             ),
         },
         {
+            accessorKey: "testMethod",
+            header: "Method",
+            cell: ({ row }) => row.getValue("testMethod") || "-",
+        },
+        {
             accessorKey: "laboratoryId",
             header: "Lab",
             cell: ({ row }) => row.getValue("laboratoryId"),
         },
         {
-            accessorKey: "testMethod",
-            header: "Method",
-            cell: ({ row }) => row.getValue("testMethod") || '-',
-        },
-        {
-            accessorKey: "sourceFilename",
+            accessorKey: "sourceType", // For filtering
             header: "Source",
             cell: ({ row }) => {
                 const m = row.original;
-                return m.sourceType === 'pdf' ? (
-                    <span className="text-blue-600 underline text-sm cursor-pointer hover:text-blue-800" onClick={() => {
-                        // e.stopPropagation(); // managed by row click? DataTable row click usually navigates if configured? 
-                        // But here we might want to open PDF. For now just text.
-                    }}>
-                        {m.sourceFilename || "Report"}
-                    </span>
+                return m.sourceType === "pdf" ? (
+                    <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
+                        <FileText className="h-4 w-4" />
+                        <span className="truncate max-w-[100px]">{m.sourceFilename || "Report.pdf"}</span>
+                    </div>
                 ) : (
-                    <span className="text-muted-foreground text-xs">Manual</span>
+                    <span className="text-muted-foreground text-xs">Manual Entry</span>
                 );
             }
         },
         {
-            id: "actions",
+            accessorKey: "_isActive",
+            header: "Status",
             cell: ({ row }) => {
                 const isActive = row.original._isActive;
                 return (
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                    onClick={(e) => toggleActive(e, row.original.id, isActive)}
-                                >
-                                    {isActive ? <Power className="h-4 w-4" /> : <Undo2 className="h-4 w-4" />}
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>{isActive ? "Deactivate Measurement" : "Reactivate Measurement"}</p>
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`h-6 w-6 p-0 rounded-full ${isActive ? "text-green-600 hover:text-green-700 hover:bg-green-100" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={(e) => toggleActive(e, row.original.id, !!isActive)}
+                        title={isActive ? "Deactivate Measurement" : "Activate Measurement"}
+                    >
+                        <Power className="h-3.5 w-3.5" />
+                    </Button>
                 );
-            }
+            },
         },
         // Hidden search column
         {
             id: "_search",
-            accessorFn: (row) => `${row.referenceNumber} ${row.orderNumber} ${row._propertyName} ${row.laboratoryId} ${row.testMethod}`.toLowerCase(),
+            accessorFn: (row) => `${row.referenceNumber || ''} ${row.orderNumber || ''} ${row._propertyName || ''} ${row.laboratoryId || ''} ${row.testMethod || ''}`.toLowerCase(),
             header: () => null,
             cell: () => null,
             enableHiding: true,
         },
     ];
+
+    const [globalFilter, setGlobalFilter] = useState("");
+
+    const searchableData = useMemo(() => {
+        return data.map(item => ({
+            ...item,
+            _searchString: `${item.referenceNumber || ''} ${item.orderNumber || ''} ${item._propertyName || ''} ${item.laboratoryId || ''} ${item.testMethod || ''}`.toLowerCase()
+        }));
+    }, [data]);
+
+    const filteredData = useMemo(() => {
+        if (!globalFilter) return searchableData;
+        const lowerFilter = globalFilter.toLowerCase();
+        return searchableData.filter(item => item._searchString.includes(lowerFilter));
+    }, [searchableData, globalFilter]);
 
     return (
         <div className="space-y-6">
@@ -198,14 +227,16 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
                 <CardHeader>
                     <CardTitle>Recorded Data</CardTitle>
                     <CardDescription>
-                        {data.filter(m => m._isActive).length} active measurements found.
+                        {filteredData.filter(m => m._isActive).length} active measurements found.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <DataTable
                         columns={columns}
-                        data={data}
+                        data={filteredData}
                         enableGlobalFilter={true}
+                        globalFilter={globalFilter}
+                        onGlobalFilterChange={setGlobalFilter}
                         filterPlaceholder="Search internal records..."
                         onRowClick={(row) => navigate(`/measurements/${row.id}`)}
                     />

@@ -25,7 +25,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { Plus, Trash, Search, Settings2 } from 'lucide-react';
+import { Plus, Trash, Search, Settings2, ArrowUp, ArrowDown } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -54,13 +54,17 @@ export function TestMethodsView() {
 
     const handleCreateMethod = async () => {
         if (!newMethodName.trim()) return;
-        await addTestMethod({
-            name: newMethodName,
-            description: "",
-            properties: []
-        });
-        setNewMethodName("");
-        setIsAddOpen(false);
+        try {
+            await addTestMethod({
+                name: newMethodName,
+                description: "",
+                properties: []
+            });
+            setNewMethodName("");
+            setIsAddOpen(false);
+        } catch (e: any) {
+            alert(`Failed to create test method: ${e.message}`);
+        }
     };
 
     const handleDeleteMethod = async (id: string, e: React.MouseEvent) => {
@@ -117,6 +121,19 @@ export function TestMethodsView() {
             return { ...p, statsTypes: newTypes };
         });
 
+        await updateTestMethod(selectedMethod.id, { properties: newProperties });
+    };
+
+    const handleMoveProperty = async (index: number, direction: 'up' | 'down') => {
+        if (!selectedMethod) return;
+        const newProperties = [...selectedMethod.properties];
+        if (direction === 'up') {
+            if (index === 0) return;
+            [newProperties[index - 1], newProperties[index]] = [newProperties[index], newProperties[index - 1]];
+        } else {
+            if (index === newProperties.length - 1) return;
+            [newProperties[index], newProperties[index + 1]] = [newProperties[index + 1], newProperties[index]];
+        }
         await updateTestMethod(selectedMethod.id, { properties: newProperties });
     };
 
@@ -260,25 +277,53 @@ export function TestMethodsView() {
                             <div className="divide-y">
                                 {selectedMethod.properties.map((propConfig, index) => {
                                     const prop = properties.find(p => p.id === propConfig.propertyId);
-                                    if (!prop) return null;
+
+                                    // Handle missing/deleted property definitions
+                                    const isMissing = !prop;
+                                    const displayName = prop ? prop.name : `Missing Property (${propConfig.propertyId.substring(0, 8)})`;
+                                    const displayUnit = prop ? prop.unit : "???";
+                                    const displayCategory = prop ? prop.category : "Unknown";
+
                                     return (
-                                        <div key={propConfig.propertyId} className="flex items-center justify-between p-3 hover:bg-muted/30 group">
+                                        <div key={propConfig.propertyId} className={cn("flex items-center justify-between p-3 hover:bg-muted/30 group", isMissing && "bg-destructive/10 border-l-2 border-destructive")}>
                                             <div className="flex items-center gap-3 flex-1">
                                                 <Badge variant="outline" className="w-6 h-6 rounded-full flex items-center justify-center p-0 text-muted-foreground text-[10px]">
                                                     {index + 1}
                                                 </Badge>
                                                 <div className="flex-1">
-                                                    <div className="font-medium text-sm flex items-center gap-2">
-                                                        {prop.name}
+                                                    <div className={cn("font-medium text-sm flex items-center gap-2", isMissing && "text-destructive")}>
+                                                        {displayName}
                                                         {/* Ensure backwards compatibility for display */}
-                                                        {(propConfig.statsTypes?.includes('design') || (propConfig as any).statsType === 'design_values') && (
+                                                        {(!isMissing && (propConfig.statsTypes?.includes('design') || (propConfig as any).statsType === 'design_values')) && (
                                                             <Badge variant="secondary" className="text-[10px] h-4 px-1">A/B Values</Badge>
                                                         )}
+                                                        {isMissing && <Badge variant="destructive" className="text-[10px] h-4 px-1">Definition Missing</Badge>}
                                                     </div>
                                                     <div className="text-xs text-muted-foreground">
-                                                        <span className="capitalize">{prop.category}</span> • {prop.unit}
+                                                        <span className="capitalize">{displayCategory}</span> • {displayUnit}
                                                     </div>
                                                 </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-1 mr-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 w-6 p-0 hover:bg-muted"
+                                                    disabled={index === 0}
+                                                    onClick={() => handleMoveProperty(index, 'up')}
+                                                >
+                                                    <ArrowUp className="h-3 w-3" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 w-6 p-0 hover:bg-muted"
+                                                    disabled={index === selectedMethod.properties.length - 1}
+                                                    onClick={() => handleMoveProperty(index, 'down')}
+                                                >
+                                                    <ArrowDown className="h-3 w-3" />
+                                                </Button>
                                             </div>
 
                                             <div className="flex items-center gap-2">

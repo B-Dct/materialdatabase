@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { DataTable } from '@/components/ui/data-table';
+import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'; // Added import
 import type { ColumnDef } from '@tanstack/react-table';
 import type { Layup } from '@/types/domain';
 import { Button } from '@/components/ui/button';
-import { Plus, Eye, Archive } from 'lucide-react'; // Import Archive icon
+import { Plus, Eye, Archive, Activity, Check, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { format } from 'date-fns';
@@ -26,10 +27,6 @@ export function LayupListPage() {
 
         // aggregate material names
         const materialNames = l.layers.map(layer => {
-            // Find variant? We have variant ID.
-            // We need to look up in materials? 
-            // Ideally store should help, but let's do safe lookup
-            // This might be slow if huge data, but fine for now
             const mat = materials.find(m => m.variants?.some(v => v.id === layer.materialVariantId));
             const variant = mat?.variants?.find(v => v.id === layer.materialVariantId);
             return `${mat?.name} ${variant?.variantName} ${mat?.manufacturer}`;
@@ -46,57 +43,106 @@ export function LayupListPage() {
         showArchived ? l.status === 'obsolete' : l.status !== 'obsolete'
     );
 
+    // Default Sort: Newest First
+    const sortedLayups = [...filteredLayups].sort((a, b) => {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
     const columns: ColumnDef<Layup>[] = [
         {
             accessorKey: "name",
-            header: "Name",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
             cell: ({ row }) => <div className="font-medium">{row.getValue("name")}</div>,
+            enableSorting: true,
         },
         {
             accessorKey: "status",
-            header: "Status",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
             cell: ({ row }) => {
                 const status = row.getValue("status") as string;
                 return <StatusBadge status={status} />;
+            },
+            enableSorting: true,
+            filterFn: (row, id, value) => {
+                return value.includes(row.getValue(id))
             },
         },
 
         {
             accessorKey: "processId",
-            header: "Process",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Process" />,
             cell: ({ row }) => {
                 const pid = row.getValue("processId") as string;
                 const process = processes.find(p => p.id === pid);
                 return process ? process.name : <span className="text-muted-foreground">-</span>;
             },
+            enableSorting: true,
             filterFn: (row, id, value) => {
                 return value.includes(row.getValue(id))
             },
         },
         {
             accessorKey: "totalThickness",
-            header: "Thickness (mm)",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Thickness (mm)" />,
             cell: ({ row }) => {
                 const val = row.getValue("totalThickness") as number;
                 return val ? val.toFixed(2) : '-';
-            }
+            },
+            enableSorting: true,
         },
         {
             accessorKey: "totalWeight",
-            header: "Weight (g)",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Weight (g)" />,
             cell: ({ row }) => {
                 const val = row.getValue("totalWeight") as number;
                 return val ? val.toFixed(0) : '-';
-            }
+            },
+            enableSorting: true,
         },
         {
             accessorKey: "createdAt",
-            header: "Created",
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
             cell: ({ row }) => {
                 const date = row.getValue("createdAt") as string;
                 if (!date) return '-';
                 return format(new Date(date), 'dd.MM.yyyy');
-            }
+            },
+            enableSorting: true,
+        },
+        {
+            id: "measurements",
+            accessorFn: (row) => row.measurements?.length || 0,
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Measurements" />,
+            cell: ({ row }) => {
+                const count = row.getValue("measurements") as number;
+                return (
+                    <div className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                        <span>{count}</span>
+                    </div>
+                );
+            },
+            enableSorting: true,
+        },
+        {
+            id: "allowables",
+            accessorFn: (row) => (row.allowables?.length || 0) > 0,
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Allowables" />,
+            cell: ({ row }) => {
+                const hasAllowables = row.getValue("allowables") as boolean;
+                return hasAllowables ? (
+                    <div className="flex items-center text-green-600">
+                        <Check className="h-4 w-4 mr-1" />
+                        <span className="text-xs font-medium">Yes</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center text-muted-foreground/30">
+                        <X className="h-4 w-4 mr-1" />
+                        <span className="text-xs">No</span>
+                    </div>
+                );
+            },
+            enableSorting: true,
         },
         // Hidden column for search
         {
@@ -104,17 +150,7 @@ export function LayupListPage() {
             accessorKey: "_search",
             header: () => null,
             cell: () => null,
-            enableHiding: true, // Allow it to be hidden? It is hidden from view by returning null cell effectively, but we might want `enableHiding: false` so user can't toggle it? 
-            // Better: just don't display it. 
-            // Actually, for global filter to work, the default behavior searches all columns.
-            // But we want to explicitly use this column?
-            // "Global filtering creates a search string from all columns..."
-            // If we have a dedicated `_search` column, it will be included.
-            // BUT, visual noise. 
-            // In TanStack Table v8, we can customize `globalFilterFn`.
-            // For now, let's just keep it in data but NOT in columns? 
-            // If it's not in columns, it won't be searched by default.
-            // So we MUST have it in columns. We hide it via visibility.
+            enableHiding: true,
         },
         {
             id: "actions",
@@ -133,10 +169,10 @@ export function LayupListPage() {
     const processOptions = processes.map(p => ({ label: p.name, value: p.id }));
 
     return (
-        <div className="h-full flex flex-col p-8 space-y-8">
+        <div className="h-full flex flex-col p-8 space-y-8 animate-in fade-in duration-500">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-2xl font-bold tracking-tight">Layups</h2>
+                    <h2 className="text-3xl font-bold tracking-tight">Layups</h2>
                     <p className="text-muted-foreground">Manage composite stackups and laminates.</p>
                 </div>
                 <div className="flex gap-2">
@@ -154,10 +190,10 @@ export function LayupListPage() {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden border rounded-md p-4">
                 <DataTable
                     columns={columns}
-                    data={filteredLayups}
+                    data={sortedLayups}
                     enableGlobalFilter={true}
                     filterPlaceholder="Search layups, materials..."
                     facetedFilters={[

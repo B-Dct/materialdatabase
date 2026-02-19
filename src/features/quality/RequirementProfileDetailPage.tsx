@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { RequirementRuleDialog } from './RequirementRuleDialog'; // New Component
 import { RequirementProfileDialog } from './RequirementEditorDialog';
-import { Plus, Pencil, Edit } from 'lucide-react';
+import { Plus, Edit, Trash2 } from 'lucide-react';
 import type { RequirementRule } from '@/types/domain';
 
 export function RequirementProfileDetailPage() {
@@ -205,8 +205,13 @@ export function RequirementProfileDetailPage() {
                                                 <TableCell>{rule.unit || getPropUnit(rule.propertyId)}</TableCell>
                                                 <TableCell className="text-muted-foreground">{rule.method || '-'}</TableCell>
                                                 <TableCell>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                                        <Pencil className="h-4 w-4 text-muted-foreground" />
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm('Are you sure you want to remove this property?')) {
+                                                            handleDeleteRule(rule.propertyId);
+                                                        }
+                                                    }}>
+                                                        <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
@@ -272,17 +277,19 @@ export function RequirementProfileDetailPage() {
             />
 
             {/* Profile Logic Edit Dialog */}
-            {editProfileOpen && (
-                <RequirementProfileDialog
-                    open={editProfileOpen}
-                    onOpenChange={setEditProfileOpen}
-                    initialData={profile}
-                    onSave={async (updated) => {
-                        await updateRequirementProfile(profile.id, updated);
-                        setEditProfileOpen(false);
-                    }}
-                />
-            )}
-        </div>
+            {
+                editProfileOpen && (
+                    <RequirementProfileDialog
+                        open={editProfileOpen}
+                        onOpenChange={setEditProfileOpen}
+                        initialData={profile}
+                        onSave={async (updated) => {
+                            await updateRequirementProfile(profile.id, updated);
+                            setEditProfileOpen(false);
+                        }}
+                    />
+                )
+            }
+        </div >
     );
 }

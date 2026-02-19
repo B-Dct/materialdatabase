@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Trash2, Box, Layers } from 'lucide-react';
+import { GripVertical, Trash2, Box, Layers, Nut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import type { ComponentConfig } from '@/types/domain';
 
 interface SortableComponentItemProps {
     id: string;
-    componentType: 'layup' | 'material';
+    componentType: 'layup' | 'material' | 'standard_part';
     componentName: string;
     quantity: number;
     position?: string;
@@ -76,8 +76,8 @@ export function SortableComponentItem({
                 </div>
             )}
 
-            <div className={`mt-1 p-2 rounded-md ${componentType === 'layup' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                {componentType === 'layup' ? <Layers className="h-5 w-5" /> : <Box className="h-5 w-5" />}
+            <div className={`mt-1 p-2 rounded-md ${componentType === 'layup' ? 'bg-blue-100 text-blue-700' : componentType === 'standard_part' ? 'bg-slate-100 text-slate-700' : 'bg-amber-100 text-amber-700'}`}>
+                {componentType === 'layup' ? <Layers className="h-5 w-5" /> : componentType === 'standard_part' ? <Nut className="h-5 w-5" /> : <Box className="h-5 w-5" />}
             </div>
 
             <div className="flex-1 min-w-0 space-y-2">

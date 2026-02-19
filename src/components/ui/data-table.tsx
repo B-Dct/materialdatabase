@@ -47,7 +47,9 @@ interface DataTableProps<TData, TValue> {
     data: TData[]
     filterColumn?: string
     filterPlaceholder?: string
-    enableGlobalFilter?: boolean // New Prop
+    enableGlobalFilter?: boolean
+    globalFilter?: string // Controlled state
+    onGlobalFilterChange?: (value: string) => void // Controlled handler
     facetedFilters?: {
         column: string
         title: string
@@ -65,14 +67,20 @@ export function DataTable<TData, TValue>({
     data,
     filterColumn = "name",
     filterPlaceholder = "Filter...",
-    enableGlobalFilter = false, // Default false
+    enableGlobalFilter = false,
+    globalFilter: controlledGlobalFilter, // Rename to avoid clash
+    onGlobalFilterChange: controlledOnGlobalFilterChange,
     facetedFilters = [],
     onRowClick
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-    const [globalFilter, setGlobalFilter] = React.useState<string>("") // Global Filter State
+    const [internalGlobalFilter, setInternalGlobalFilter] = React.useState<string>("")
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
+
+    // Use controlled or internal state
+    const globalFilter = controlledGlobalFilter !== undefined ? controlledGlobalFilter : internalGlobalFilter;
+    const setGlobalFilter = controlledOnGlobalFilterChange || setInternalGlobalFilter;
 
     const table = useReactTable({
         data,
@@ -83,25 +91,24 @@ export function DataTable<TData, TValue>({
         getSortedRowModel: getSortedRowModel(),
         onColumnFiltersChange: setColumnFilters,
         getFilteredRowModel: getFilteredRowModel(),
-        // getGlobalFilteredRowModel: getGlobalFilteredRowModel(), // Enable Global Filter Model
-        onGlobalFilterChange: setGlobalFilter, // Bind state change
+        onGlobalFilterChange: setGlobalFilter,
         onColumnVisibilityChange: setColumnVisibility,
         state: {
             sorting,
             columnFilters,
-            globalFilter, // Pass state
+            globalFilter,
             columnVisibility,
         },
         enableRowSelection: true,
     })
 
+    // Manual filtering for global filter if provided
     const isFiltered = table.getState().columnFilters.length > 0 || table.getState().globalFilter;
 
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <div className="flex flex-1 items-center space-x-2">
-                    {/* Search Input Logic */}
                     {enableGlobalFilter ? (
                         <Input
                             placeholder={filterPlaceholder}
@@ -227,7 +234,6 @@ export function DataTable<TData, TValue>({
                 </Table>
             </div>
 
-            {/* Pagination Controls */}
             <div className="flex items-center justify-between px-2">
                 <div className="flex-1 text-sm text-muted-foreground">
                     {table.getFilteredSelectedRowModel().rows.length} of{" "}

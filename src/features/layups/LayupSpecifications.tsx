@@ -141,16 +141,25 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
 
     const handleInlinePropSelect = (propName: string) => {
         const def = properties.find(p => p.name === propName);
+        const methods = def?.testMethods || [];
         setNewInlineProp(prev => ({
             ...prev,
             name: propName,
             unit: def?.unit || prev.unit || "",
-            method: ""
+            method: methods.length === 1 ? methods[0] : "" // Auto-select if only one
         }));
     };
 
     const handleInlineSave = async () => {
         if (!addingToSpecId || !newInlineProp.name) return;
+
+        // Validation: If property has defined methods, one must be selected
+        const def = properties.find(p => p.name === newInlineProp.name);
+        const definedMethods = def?.testMethods || [];
+        if (definedMethods.length > 0 && !newInlineProp.method) {
+            alert(`Please select a Test Method for ${newInlineProp.name}`);
+            return;
+        }
 
         // Resolve specification name
         const specName = specifications.find(s => s.id === addingToSpecId)?.name || "";
@@ -391,6 +400,7 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
                                                                     <TableHeader>
                                                                         <TableRow className="hover:bg-transparent">
                                                                             <TableHead className="h-8">Property</TableHead>
+                                                                            <TableHead className="h-8">Method</TableHead>
                                                                             <TableHead className="h-8">Value</TableHead>
                                                                             <TableHead className="h-8">Unit</TableHead>
                                                                             <TableHead className="h-8">Range/Stats</TableHead>
@@ -400,7 +410,7 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
                                                                     <TableBody>
                                                                         {specProperties.length === 0 && !isAdding ? (
                                                                             <TableRow>
-                                                                                <TableCell colSpan={5} className="text-center h-16 text-muted-foreground text-sm">
+                                                                                <TableCell colSpan={6} className="text-center h-16 text-muted-foreground text-sm">
                                                                                     No values defined for this specification.
                                                                                 </TableCell>
                                                                             </TableRow>
@@ -409,6 +419,7 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
                                                                                 {specProperties.map(prop => (
                                                                                     <TableRow key={prop.id} className="hover:bg-muted/50">
                                                                                         <TableCell className="font-medium py-2">{prop.name}</TableCell>
+                                                                                        <TableCell className="text-muted-foreground py-2 text-xs">{prop.method || '-'}</TableCell>
                                                                                         <TableCell className="py-2">{prop.value}</TableCell>
                                                                                         <TableCell className="text-muted-foreground py-2">{prop.unit}</TableCell>
                                                                                         <TableCell className="text-muted-foreground text-xs py-2">
@@ -452,6 +463,39 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
                                                                                                     ))}
                                                                                                 </SelectContent>
                                                                                             </Select>
+                                                                                        </TableCell>
+                                                                                        <TableCell className="py-2 align-top">
+                                                                                            {(() => {
+                                                                                                const def = properties.find(p => p.name === newInlineProp.name);
+                                                                                                const methods = def?.testMethods || [];
+
+                                                                                                if (methods.length > 0) {
+                                                                                                    return (
+                                                                                                        <Select
+                                                                                                            value={newInlineProp.method}
+                                                                                                            onValueChange={(val) => setNewInlineProp(prev => ({ ...prev, method: val }))}
+                                                                                                        >
+                                                                                                            <SelectTrigger className="h-8 w-full min-w-[100px]">
+                                                                                                                <SelectValue placeholder="Method" />
+                                                                                                            </SelectTrigger>
+                                                                                                            <SelectContent>
+                                                                                                                {methods.map(m => (
+                                                                                                                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                                                                                                                ))}
+                                                                                                            </SelectContent>
+                                                                                                        </Select>
+                                                                                                    );
+                                                                                                } else {
+                                                                                                    return (
+                                                                                                        <Input
+                                                                                                            className="h-8"
+                                                                                                            placeholder="Method"
+                                                                                                            value={newInlineProp.method || ""}
+                                                                                                            onChange={e => setNewInlineProp(prev => ({ ...prev, method: e.target.value }))}
+                                                                                                        />
+                                                                                                    );
+                                                                                                }
+                                                                                            })()}
                                                                                         </TableCell>
                                                                                         <TableCell className="py-2 align-top">
                                                                                             <Input

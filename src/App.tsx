@@ -21,6 +21,7 @@ import { AnalysisDashboard } from '@/features/analysis/AnalysisDashboard';
 
 import { CorrelationView } from '@/features/analysis/CorrelationView';
 import { SettingsPage } from '@/features/settings/SettingsPage';
+import StandardPartsPage from '@/features/parts/StandardPartsPage';
 import { AuthProvider } from '@/lib/auth';
 import { Protect } from '@/components/auth/Protect';
 
@@ -42,6 +43,7 @@ function App() {
             <Route path="assemblies" element={<AssemblyListPage />} />
             <Route path="assemblies/new" element={<CreateAssemblyPage />} />
             <Route path="assemblies/:id" element={<AssemblyDetailPage />} />
+            <Route path="parts" element={<StandardPartsPage />} />
 
             <Route path="standards" element={<RequirementProfileListPage />} />
             <Route path="standards/:id" element={<RequirementProfileDetailPage />} />

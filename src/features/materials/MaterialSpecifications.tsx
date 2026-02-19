@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, FileText, Calendar, Download, Eye, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, Trash2, FileText, Calendar, Download, Eye, ChevronRight, ChevronDown, Pencil } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import type { Material, MaterialSpecification, MaterialProperty } from "@/types/domain";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,7 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
 
     // Inline editing state
     const [addingToSpecId, setAddingToSpecId] = useState<string | null>(null);
+    const [editingPropId, setEditingPropId] = useState<string | null>(null);
     const [newInlineProp, setNewInlineProp] = useState<Partial<MaterialProperty>>({
         name: "",
         value: "",
@@ -143,34 +144,53 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
 
     const handleInlinePropSelect = (propName: string) => {
         const def = properties.find(p => p.name === propName);
+        const methods = def?.testMethods || [];
+
         setNewInlineProp(prev => ({
             ...prev,
             name: propName,
             unit: def?.unit || prev.unit || "",
-            method: ""
+            method: methods.length === 1 ? methods[0] : "" // Auto-select if only one
         }));
     };
 
     const handleInlineSave = async () => {
-        if (!addingToSpecId || !newInlineProp.name) return; // Value might be empty if only min/max are used? Let's require at least name.
+        if ((!addingToSpecId && !editingPropId) || !newInlineProp.name) return;
+
+        // Validation: If property has defined methods, one must be selected
+        const def = properties.find(p => p.name === newInlineProp.name);
+        const definedMethods = def?.testMethods || [];
+        if (definedMethods.length > 0 && !newInlineProp.method) {
+            alert(`Please select a Test Method for ${newInlineProp.name}`);
+            return;
+        }
 
         // Resolve specification name
-        const specName = specifications.find(s => s.id === addingToSpecId)?.name || "";
+        const targetSpecId = addingToSpecId || (material.properties || []).find(p => p.id === editingPropId)?.specificationId;
+        const specName = specifications.find(s => s.id === targetSpecId)?.name || "";
+
+        // If editing, preserve ID, otherwise new UUID
+        const propertyId = editingPropId || uuidv4();
 
         const property: MaterialProperty = {
-            id: uuidv4(),
+            id: propertyId,
             name: newInlineProp.name || "",
-            value: newInlineProp.value || "", // Allow empty if ranges are set?
+            value: newInlineProp.value || "",
             unit: newInlineProp.unit || "",
             method: newInlineProp.method,
-            specificationId: addingToSpecId,
-            specification: specName, // Legacy persistence
+            specificationId: targetSpecId || "",
+            specification: specName,
             vMin: newInlineProp.vMin,
             vMax: newInlineProp.vMax,
             vMean: newInlineProp.vMean
         };
 
-        const updatedProperties = [...(material.properties || []), property];
+        let updatedProperties;
+        if (editingPropId) {
+            updatedProperties = (material.properties || []).map(p => p.id === editingPropId ? property : p);
+        } else {
+            updatedProperties = [...(material.properties || []), property];
+        }
 
         try {
             await updateMaterial(material.id, { properties: updatedProperties });
@@ -183,20 +203,8 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                 method: "",
                 specificationId: ""
             });
-            // Keep the row open? Or close it? Usually close it or keep it for rapid entry.
-            // User asked for "inline... simplify". Rapid entry is good.
-            // Let's keep it open but clear the values? Or close it.
-            // Let's close it for now to be safe, easier to re-open.
-            // Actually, keep it open for "batch entry" feels faster.
-            // But let's follow standard pattern: Save -> Clear.
-            setNewInlineProp({
-                name: "",
-                value: "",
-                unit: "",
-                method: "",
-                specificationId: ""
-            });
-            // Focus might be lost. Let's just keep addingToSpecId set.
+            setEditingPropId(null);
+            if (editingPropId) setAddingToSpecId(null); // Just cleanup, though not strictly needed if we check editingPropId first
         } catch (error) {
             console.error("Failed to save inline property:", error);
         }
@@ -204,7 +212,23 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
 
     const cancelInlineAdd = () => {
         setAddingToSpecId(null);
+        setEditingPropId(null);
         setNewInlineProp({});
+    };
+
+    const handleEditProperty = (prop: MaterialProperty) => {
+        setEditingPropId(prop.id);
+        setNewInlineProp({
+            name: prop.name,
+            value: prop.value,
+            unit: prop.unit,
+            method: prop.method,
+            vMin: prop.vMin,
+            vMax: prop.vMax,
+            vMean: prop.vMean,
+            specificationId: prop.specificationId
+        });
+        setAddingToSpecId(null); // Close add mode if open
     };
 
 
@@ -408,6 +432,7 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                                                                     <TableHeader>
                                                                         <TableRow className="hover:bg-transparent">
                                                                             <TableHead className="h-8">Property</TableHead>
+                                                                            <TableHead className="h-8">Method</TableHead>
                                                                             <TableHead className="h-8">Value</TableHead>
                                                                             <TableHead className="h-8">Unit</TableHead>
                                                                             <TableHead className="h-8">Range/Stats</TableHead>
@@ -417,38 +442,174 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                                                                     <TableBody>
                                                                         {specProperties.length === 0 && !isAdding ? (
                                                                             <TableRow>
-                                                                                <TableCell colSpan={5} className="text-center h-16 text-muted-foreground text-sm">
+                                                                                <TableCell colSpan={6} className="text-center h-16 text-muted-foreground text-sm">
                                                                                     No values defined for this specification.
                                                                                 </TableCell>
                                                                             </TableRow>
                                                                         ) : (
                                                                             <>
-                                                                                {specProperties.map(prop => (
-                                                                                    <TableRow key={prop.id} className="hover:bg-muted/50">
-                                                                                        <TableCell className="font-medium py-2">{prop.name}</TableCell>
-                                                                                        <TableCell className="py-2">{prop.value}</TableCell>
-                                                                                        <TableCell className="text-muted-foreground py-2">{prop.unit}</TableCell>
-                                                                                        <TableCell className="text-muted-foreground text-xs py-2">
-                                                                                            {(prop.vMin !== undefined || prop.vMax !== undefined) ?
-                                                                                                `${prop.vMin ?? '*'} - ${prop.vMax ?? '*'} (Mean: ${prop.vMean ?? prop.value})` :
-                                                                                                '-'
-                                                                                            }
-                                                                                        </TableCell>
-                                                                                        <TableCell className="py-2 text-right">
-                                                                                            <Button
-                                                                                                variant="ghost"
-                                                                                                size="icon"
-                                                                                                className="h-6 w-6 text-destructive hover:bg-destructive/10"
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    handleDeleteProperty(prop.id);
-                                                                                                }}
-                                                                                            >
-                                                                                                <Trash2 className="h-3 w-3" />
-                                                                                            </Button>
-                                                                                        </TableCell>
-                                                                                    </TableRow>
-                                                                                ))}
+                                                                                {specProperties.map(prop => {
+                                                                                    if (editingPropId === prop.id) {
+                                                                                        return (
+                                                                                            <TableRow key={prop.id} className="bg-blue-50/50">
+                                                                                                <TableCell className="py-2 align-top">
+                                                                                                    <Select
+                                                                                                        value={newInlineProp.name}
+                                                                                                        onValueChange={handleInlinePropSelect}
+                                                                                                        disabled // Cannot change property name when editing? Or allow? Usually easier to delete re-add if name changes. Let's allow but it might change ID logic if we rely on name. Actually name is just a field.
+                                                                                                    >
+                                                                                                        <SelectTrigger className="h-8 w-full min-w-[140px]">
+                                                                                                            <SelectValue placeholder="Property" />
+                                                                                                        </SelectTrigger>
+                                                                                                        <SelectContent>
+                                                                                                            {sortPropertiesByCategory(properties, properties).map(p => (
+                                                                                                                <SelectItem key={p.id} value={p.name}>
+                                                                                                                    {p.name}
+                                                                                                                </SelectItem>
+                                                                                                            ))}
+                                                                                                        </SelectContent>
+                                                                                                    </Select>
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-2 align-top">
+                                                                                                    {(() => {
+                                                                                                        const def = properties.find(p => p.name === newInlineProp.name);
+                                                                                                        const methods = def?.testMethods || [];
+
+                                                                                                        if (methods.length > 0) {
+                                                                                                            return (
+                                                                                                                <Select
+                                                                                                                    value={newInlineProp.method}
+                                                                                                                    onValueChange={(val) => setNewInlineProp(prev => ({ ...prev, method: val }))}
+                                                                                                                >
+                                                                                                                    <SelectTrigger className="h-8 w-full min-w-[100px]">
+                                                                                                                        <SelectValue placeholder="Method" />
+                                                                                                                    </SelectTrigger>
+                                                                                                                    <SelectContent>
+                                                                                                                        {methods.map(m => (
+                                                                                                                            <SelectItem key={m} value={m}>{m}</SelectItem>
+                                                                                                                        ))}
+                                                                                                                    </SelectContent>
+                                                                                                                </Select>
+                                                                                                            );
+                                                                                                        } else {
+                                                                                                            return (
+                                                                                                                <Input
+                                                                                                                    className="h-8"
+                                                                                                                    placeholder="Method"
+                                                                                                                    value={newInlineProp.method || ""}
+                                                                                                                    onChange={e => setNewInlineProp(prev => ({ ...prev, method: e.target.value }))}
+                                                                                                                />
+                                                                                                            );
+                                                                                                        }
+                                                                                                    })()}
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-2 align-top">
+                                                                                                    <Input
+                                                                                                        className="h-8"
+                                                                                                        placeholder="Value/Mean"
+                                                                                                        value={newInlineProp.value}
+                                                                                                        onChange={(e) => {
+                                                                                                            const val = e.target.value;
+                                                                                                            setNewInlineProp(prev => ({
+                                                                                                                ...prev,
+                                                                                                                value: val,
+                                                                                                                vMean: !isNaN(parseFloat(val)) ? parseFloat(val) : undefined
+                                                                                                            }));
+                                                                                                        }}
+                                                                                                    />
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-2 align-top">
+                                                                                                    <Input
+                                                                                                        className="h-8 w-20"
+                                                                                                        placeholder="Unit"
+                                                                                                        value={newInlineProp.unit}
+                                                                                                        onChange={(e) => setNewInlineProp(prev => ({ ...prev, unit: e.target.value }))}
+                                                                                                    />
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-2 align-top">
+                                                                                                    <div className="flex items-center gap-1">
+                                                                                                        <Input
+                                                                                                            className="h-8 w-16 px-1 text-center"
+                                                                                                            placeholder="Min"
+                                                                                                            type="number"
+                                                                                                            value={newInlineProp.vMin ?? ''}
+                                                                                                            onChange={(e) => setNewInlineProp(prev => ({ ...prev, vMin: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                                                                                                        />
+                                                                                                        <span className="text-muted-foreground">-</span>
+                                                                                                        <Input
+                                                                                                            className="h-8 w-16 px-1 text-center"
+                                                                                                            placeholder="Max"
+                                                                                                            type="number"
+                                                                                                            value={newInlineProp.vMax ?? ''}
+                                                                                                            onChange={(e) => setNewInlineProp(prev => ({ ...prev, vMax: e.target.value ? parseFloat(e.target.value) : undefined }))}
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-2 text-right align-top">
+                                                                                                    <div className="flex items-center justify-end gap-1">
+                                                                                                        <Button
+                                                                                                            size="icon"
+                                                                                                            variant="default"
+                                                                                                            className="h-8 w-8 bg-green-600 hover:bg-green-700 text-white"
+                                                                                                            onClick={handleInlineSave}
+                                                                                                            disabled={!newInlineProp.name}
+                                                                                                        >
+                                                                                                            <Check className="h-4 w-4" />
+                                                                                                        </Button>
+                                                                                                        <Button
+                                                                                                            size="icon"
+                                                                                                            variant="ghost"
+                                                                                                            className="h-8 w-8"
+                                                                                                            onClick={cancelInlineAdd}
+                                                                                                        >
+                                                                                                            <X className="h-4 w-4" />
+                                                                                                        </Button>
+                                                                                                    </div>
+                                                                                                </TableCell>
+                                                                                            </TableRow>
+                                                                                        );
+                                                                                    }
+                                                                                    return (
+                                                                                        <TableRow key={prop.id} className="hover:bg-muted/50">
+                                                                                            <TableCell className="font-medium py-2">{prop.name}</TableCell>
+                                                                                            <TableCell className="text-muted-foreground py-2 text-xs">{prop.method || '-'}</TableCell>
+                                                                                            <TableCell className="py-2">{prop.value}</TableCell>
+                                                                                            <TableCell className="text-muted-foreground py-2">{prop.unit}</TableCell>
+                                                                                            <TableCell className="text-muted-foreground text-xs py-2">
+                                                                                                {(prop.vMin !== undefined || prop.vMax !== undefined) ?
+                                                                                                    `${prop.vMin ?? '*'} - ${prop.vMax ?? '*'} (Mean: ${prop.vMean ?? prop.value})` :
+                                                                                                    '-'
+                                                                                                }
+                                                                                            </TableCell>
+                                                                                            <TableCell className="py-2 text-right">
+                                                                                                <div className="flex justify-end gap-1">
+                                                                                                    <Button
+                                                                                                        variant="ghost"
+                                                                                                        size="icon"
+                                                                                                        className="h-6 w-6 text-muted-foreground hover:text-primary"
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            handleEditProperty(prop);
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        <Pencil className="h-3 w-3" />
+                                                                                                    </Button>
+                                                                                                    <Button
+                                                                                                        variant="ghost"
+                                                                                                        size="icon"
+                                                                                                        className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            handleDeleteProperty(prop.id);
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        <Trash2 className="h-3 w-3" />
+                                                                                                    </Button>
+                                                                                                </div>
+                                                                                            </TableCell>
+                                                                                        </TableRow>
+                                                                                    );
+                                                                                })}
 
                                                                                 {/* INLINE ROW */}
                                                                                 {isAdding && (
@@ -469,6 +630,39 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                                                                                                     ))}
                                                                                                 </SelectContent>
                                                                                             </Select>
+                                                                                        </TableCell>
+                                                                                        <TableCell className="py-2 align-top">
+                                                                                            {(() => {
+                                                                                                const def = properties.find(p => p.name === newInlineProp.name);
+                                                                                                const methods = def?.testMethods || [];
+
+                                                                                                if (methods.length > 0) {
+                                                                                                    return (
+                                                                                                        <Select
+                                                                                                            value={newInlineProp.method}
+                                                                                                            onValueChange={(val) => setNewInlineProp(prev => ({ ...prev, method: val }))}
+                                                                                                        >
+                                                                                                            <SelectTrigger className="h-8 w-full min-w-[100px]">
+                                                                                                                <SelectValue placeholder="Method" />
+                                                                                                            </SelectTrigger>
+                                                                                                            <SelectContent>
+                                                                                                                {methods.map(m => (
+                                                                                                                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                                                                                                                ))}
+                                                                                                            </SelectContent>
+                                                                                                        </Select>
+                                                                                                    );
+                                                                                                } else {
+                                                                                                    return (
+                                                                                                        <Input
+                                                                                                            className="h-8"
+                                                                                                            placeholder="Method"
+                                                                                                            value={newInlineProp.method || ""}
+                                                                                                            onChange={e => setNewInlineProp(prev => ({ ...prev, method: e.target.value }))}
+                                                                                                        />
+                                                                                                    );
+                                                                                                }
+                                                                                            })()}
                                                                                         </TableCell>
                                                                                         <TableCell className="py-2 align-top">
                                                                                             <Input

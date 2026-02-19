@@ -72,7 +72,8 @@ export function CreateTestRunPage() {
     const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
     const [orderNumber, setOrderNumber] = useState("");
     const [referenceNumber, setReferenceNumber] = useState("");
-    const [testType, setTestType] = useState<"engineering" | "qualification">("engineering");
+    // const [testType, setTestType] = useState<"engineering" | "qualification">("engineering"); // OLD
+    const [testType, setTestType] = useState<"engineering" | "qualification" | "">(""); // Default empty to force selection
 
     // Global Entity State (if no URL context)
     const [entityType, setEntityType] = useState<"material" | "layup" | "assembly">("material");
@@ -148,7 +149,7 @@ export function CreateTestRunPage() {
     const getStats = (config: TestMethodPropertyConfig) => {
         const propId = config.propertyId;
         const values = Object.values(matrixData[propId] || {})
-            .map(v => parseFloat(v))
+            .map(v => parseFloat(v.replace(/,/g, '.')))
             .filter(v => !isNaN(v));
 
         if (values.length === 0) return { mean: "-", min: "-", max: "-", bValue: "-", aValue: "-" };
@@ -196,6 +197,24 @@ export function CreateTestRunPage() {
             return;
         }
 
+        // Validation
+        if (!labId) {
+            alert("Validation Error: Please select a Laboratory.");
+            return;
+        }
+        if (!orderNumber.trim()) {
+            alert("Validation Error: Order Number is required.");
+            return;
+        }
+        if (!referenceNumber.trim()) {
+            alert("Validation Error: Reference Number is required.");
+            return;
+        }
+        if (!testType) {
+            alert("Validation Error: Please select a Test Type (Engineering or Qualification).");
+            return;
+        }
+
         try {
             const methodName = testMethods.find(m => m.id === selectedMethodId)?.name;
             let successCount = 0;
@@ -203,7 +222,7 @@ export function CreateTestRunPage() {
             for (const config of targetProperties) {
                 const propId = config.propertyId;
                 const rawValues = Object.values(matrixData[propId] || {})
-                    .map(v => parseFloat(v))
+                    .map(v => parseFloat(v.replace(/,/g, '.')))
                     .filter(v => !isNaN(v));
 
                 if (rawValues.length === 0) continue;
@@ -355,18 +374,18 @@ export function CreateTestRunPage() {
                         {/* 2. Order Info */}
                         <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-2">
-                                <Label>Order Number</Label>
+                                <Label className="after:content-['*'] after:ml-0.5 after:text-red-500">Order Number</Label>
                                 <Input placeholder="e.g. WO-2024-XXX" value={orderNumber} onChange={e => setOrderNumber(e.target.value)} />
                             </div>
                             <div className="space-y-2">
-                                <Label>Reference</Label>
+                                <Label className="after:content-['*'] after:ml-0.5 after:text-red-500">Reference</Label>
                                 <Input placeholder="e.g. Batch/Coupon" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} />
                             </div>
                         </div>
                         {/* 3. Lab, Date, Type */}
                         <div className="grid grid-cols-3 gap-2">
                             <div className="space-y-2">
-                                <Label>Laboratory</Label>
+                                <Label className="after:content-['*'] after:ml-0.5 after:text-red-500">Laboratory</Label>
                                 <Select value={labId} onValueChange={setLabId}>
                                     <SelectTrigger><SelectValue placeholder="Select Lab" /></SelectTrigger>
                                     <SelectContent>
@@ -379,9 +398,9 @@ export function CreateTestRunPage() {
                                 <Input type="date" value={testDate} onChange={e => setTestDate(e.target.value)} />
                             </div>
                             <div className="space-y-2">
-                                <Label>Type</Label>
+                                <Label className="after:content-['*'] after:ml-0.5 after:text-red-500">Type</Label>
                                 <Select value={testType} onValueChange={(v: any) => setTestType(v)}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectTrigger><SelectValue placeholder="Select Type..." /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="engineering">Engineering</SelectItem>
                                         <SelectItem value="qualification">Qualification</SelectItem>
@@ -471,8 +490,8 @@ export function CreateTestRunPage() {
                                             return (
                                                 <TableHead key={config.propertyId} className="min-w-[180px] text-center border-r relative group">
                                                     <div className="py-2">
-                                                        <div className="font-bold text-foreground">{p?.name}</div>
-                                                        <div className="text-xs font-mono text-muted-foreground">[{p?.unit}]</div>
+                                                        <div className="font-bold text-foreground">{p?.name || <span className="text-destructive font-mono text-xs" title={config.propertyId}>Missing Prop ({config.propertyId.slice(0, 6)}...)</span>}</div>
+                                                        <div className="text-xs font-mono text-muted-foreground">[{p?.unit || "-"}]</div>
                                                         {(config.statsTypes?.includes('design') || (config as any).statsType === 'design_values') && (
                                                             <div className="text-[10px] text-blue-600 font-medium mt-1">Design Values</div>
                                                         )}

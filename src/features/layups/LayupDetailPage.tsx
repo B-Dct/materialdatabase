@@ -15,6 +15,7 @@ import { LayupStatistics } from './LayupStatistics';
 import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
 import { EntityStandardsManager } from "@/features/quality/EntityStandardsManager";
 import { AllowableManager } from '@/features/quality/AllowableManager';
+import { HistoryLog } from '@/features/shared/HistoryLog';
 import { EntityDeleteDialog } from '@/components/common/EntityDeleteDialog';
 
 import { LayupPropertiesView } from './LayupPropertiesView';
@@ -24,7 +25,7 @@ import { useNavigate } from 'react-router-dom';
 
 export function LayupDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const { layups, fetchLayups, updateLayup, measurements, fetchMeasurements, fetchSpecifications } = useAppStore();
+    const { layups, fetchLayups, updateLayup, measurements, fetchMeasurements, fetchSpecifications, fetchProperties } = useAppStore();
     const [layup, setLayup] = useState<any>(null); // Type properly
 
     const navigate = useNavigate();
@@ -56,10 +57,11 @@ export function LayupDetailPage() {
         if (layups.length === 0) {
             fetchLayups();
         }
+        fetchProperties();
         if (id) {
             fetchSpecifications(id, 'layup');
         }
-    }, [fetchLayups, layups.length, id, fetchSpecifications]);
+    }, [fetchLayups, layups.length, id, fetchSpecifications, fetchProperties]);
 
     useEffect(() => {
         if (id && layups.length > 0) {
@@ -151,8 +153,8 @@ export function LayupDetailPage() {
 
 
 
-                    <TabsContent value="overview" className="flex-1 overflow-hidden p-0 bg-slate-50/50 dark:bg-slate-900/20 data-[state=active]:flex data-[state=inactive]:hidden flex-col">
-                        <div className="h-full flex flex-col border rounded-lg overflow-hidden p-0 bg-background">
+                    <TabsContent value="overview" className="flex-1 overflow-auto p-4 bg-slate-50/50 dark:bg-slate-900/20 data-[state=active]:flex data-[state=inactive]:hidden flex-col gap-4">
+                        <div className="min-h-[500px] flex flex-col border rounded-lg overflow-hidden p-0 bg-background">
                             {/* 
                             We reuse LayupStackEditor here. 
                             If isEditing is true, it allows changes.
@@ -194,8 +196,11 @@ export function LayupDetailPage() {
                                     </div>
                                 </div>
                             )}
+                        </div>
 
-
+                        {/* History Log */}
+                        <div className="h-[400px]">
+                            <HistoryLog entityId={layup.id} entityType="layup" />
                         </div>
                     </TabsContent>
 

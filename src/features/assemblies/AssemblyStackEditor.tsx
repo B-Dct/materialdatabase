@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { Plus, Save, ChevronRight } from 'lucide-react';
+import { Plus, Save, ChevronRight, Nut } from 'lucide-react';
 import type { EntityStatus, Assembly } from '@/types/domain';
 import { v4 as uuidv4 } from "uuid";
 import { MultiProcessSelector } from './MultiProcessSelector';
@@ -26,7 +26,7 @@ import type { ComponentConfig } from '@/types/domain';
 
 interface ComponentItem {
     id: string; // internal drag ID
-    componentType: 'layup' | 'material';
+    componentType: 'layup' | 'material' | 'standard_part';
     componentId: string; // origin ID
     componentName: string;
     quantity: number;
@@ -46,13 +46,16 @@ interface AssemblyStackEditorProps {
 }
 
 export function AssemblyStackEditor({ assembly, readonly = false, lockStructure = false, onSaveSuccess }: AssemblyStackEditorProps) {
-    const { addAssembly, updateAssembly, materials, layups, fetchMaterials, fetchLayups } = useAppStore();
+    const { addAssembly, updateAssembly, materials, layups, standardParts, fetchMaterials, fetchLayups, fetchStandardParts } = useAppStore();
 
     // Form State
     const [name, setName] = useState(assembly?.name || "");
     const [description, setDescription] = useState(assembly?.description || "");
     const [status, setStatus] = useState<EntityStatus>(assembly?.status || "engineering");
     const [processIds, setProcessIds] = useState<string[]>(assembly?.processIds || []);
+    // Manual Fields
+    const [totalWeight, setTotalWeight] = useState<string>(assembly?.totalWeight?.toString() || "");
+    const [totalThickness, setTotalThickness] = useState<string>(assembly?.totalThickness?.toString() || "");
 
     // Stack State
     const [components, setComponents] = useState<ComponentItem[]>([]);
@@ -60,7 +63,8 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
     useEffect(() => {
         fetchMaterials();
         fetchLayups();
-    }, [fetchMaterials, fetchLayups]);
+        fetchStandardParts();
+    }, [fetchMaterials, fetchLayups, fetchStandardParts]);
 
     // Init from assembly
     useEffect(() => {
@@ -69,6 +73,8 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
             setDescription(assembly.description);
             setStatus(assembly.status);
             setProcessIds(assembly.processIds || []);
+            setTotalWeight(assembly.totalWeight?.toString() || "");
+            setTotalThickness(assembly.totalThickness?.toString() || "");
 
             if (assembly.components) {
                 // Map existing components
@@ -79,6 +85,9 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                     if (c.componentType === 'layup') {
                         const l = layups.find(x => x.id === c.componentId);
                         if (l) name = l.name;
+                    } else if (c.componentType === 'standard_part') {
+                        const p = standardParts.find(s => s.id === c.componentId);
+                        if (p) name = p.name;
                     } else {
                         // Find variant or material?
                         const mat = materials.find(m => m.variants?.some(v => v.id === c.componentId));
@@ -103,7 +112,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                 setComponents(mapped);
             }
         }
-    }, [assembly, materials, layups]);
+    }, [assembly, materials, layups, standardParts]);
 
     // DnD
     const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor));
@@ -120,7 +129,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
         }
     };
 
-    const addComponent = (type: 'layup' | 'material', id: string, name: string) => {
+    const addComponent = (type: 'layup' | 'material' | 'standard_part', id: string, name: string) => {
         if (readonly || lockStructure) return;
 
         // Derive material type if it's a material
@@ -180,8 +189,9 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                     name,
                     description,
                     status,
-                    processIds, // Will be ignored by backend if we don't send it? 
-                    // Actually if lockStructure is true, processIds might not change, but we send current state.
+                    processIds,
+                    totalWeight: totalWeight ? parseFloat(totalWeight) : undefined,
+                    totalThickness: totalThickness ? parseFloat(totalThickness) : undefined,
                     components: payloadComponents as any
                 });
             } else {
@@ -191,6 +201,8 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                     status,
                     version: 1,
                     processIds,
+                    totalWeight: totalWeight ? parseFloat(totalWeight) : undefined,
+                    totalThickness: totalThickness ? parseFloat(totalThickness) : undefined,
                     properties: [],
                     allowables: [],
                     assignedProfileIds: [],
@@ -207,6 +219,7 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
     // Library Filter
     const [matSearch, setMatSearch] = useState("");
     const [layupSearch, setLayupSearch] = useState("");
+    const [partSearch, setPartSearch] = useState("");
 
     // Selection State
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
@@ -232,20 +245,21 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                             <CardTitle className="text-sm">Component Library</CardTitle>
                         </CardHeader>
                         <Tabs defaultValue="materials" className="flex-1 flex flex-col overflow-hidden">
-                            <div className="px-4">
-                                <TabsList className="w-full">
-                                    <TabsTrigger value="materials" className="flex-1">Materials</TabsTrigger>
-                                    <TabsTrigger value="layups" className="flex-1">Layups</TabsTrigger>
+                            <div className="p-0">
+                                <TabsList className="w-full h-9 p-0 rounded-none bg-muted/50">
+                                    <TabsTrigger value="materials" className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-xs">Materials</TabsTrigger>
+                                    <TabsTrigger value="layups" className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-xs">Layups</TabsTrigger>
+                                    <TabsTrigger value="parts" className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-xs">Std Parts</TabsTrigger>
                                 </TabsList>
                             </div>
 
-                            <TabsContent value="materials" className="flex-1 flex flex-col overflow-hidden p-0 mt-2">
+                            <TabsContent value="materials" className="flex-1 flex flex-col overflow-hidden p-0 mt-0">
                                 {!selectedMaterialId ? (
                                     <>
-                                        <div className="px-4 pb-2 shrink-0">
-                                            <Input placeholder="Search materials..." value={matSearch} onChange={e => setMatSearch(e.target.value)} className="h-8 text-xs" />
+                                        <div className="px-2 pb-2 shrink-0">
+                                            <Input placeholder="Search materials..." value={matSearch} onChange={e => setMatSearch(e.target.value)} className="h-7 text-xs" />
                                         </div>
-                                        <div className="flex-1 overflow-auto">
+                                        <div className="flex-1 overflow-auto -mx-2">
                                             <div className="divide-y relative">
                                                 {materials
                                                     .filter(m =>
@@ -315,10 +329,10 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                             </TabsContent>
 
                             <TabsContent value="layups" className="flex-1 overflow-auto p-0 mt-2">
-                                <div className="px-4 pb-2">
-                                    <Input placeholder="Search..." value={layupSearch} onChange={e => setLayupSearch(e.target.value)} className="h-8 text-xs" />
+                                <div className="px-2 pb-2">
+                                    <Input placeholder="Search..." value={layupSearch} onChange={e => setLayupSearch(e.target.value)} className="h-7 text-xs" />
                                 </div>
-                                <div className="divide-y">
+                                <div className="divide-y -mx-2">
                                     {layups
                                         .filter(l =>
                                             l.name.toLowerCase().includes(layupSearch.toLowerCase()) &&
@@ -331,6 +345,33 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                                                     <span className="text-[10px] text-muted-foreground">{l.layers.length} Layers • {l.status}</span>
                                                 </div>
                                                 <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => addComponent('layup', l.id, l.name)}>
+                                                    Add
+                                                </Button>
+                                            </div>
+                                        ))}
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="parts" className="flex-1 overflow-auto p-0 mt-2">
+                                <div className="px-2 pb-2">
+                                    <Input placeholder="Search parts..." value={partSearch} onChange={e => setPartSearch(e.target.value)} className="h-7 text-xs" />
+                                </div>
+                                <div className="divide-y -mx-2">
+                                    {standardParts
+                                        .filter(p =>
+                                            p.name.toLowerCase().includes(partSearch.toLowerCase()) &&
+                                            !['restricted', 'obsolete'].includes(p.status)
+                                        )
+                                        .map(p => (
+                                            <div key={p.id} className="p-3 hover:bg-muted/50 flex justify-between items-center">
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium text-sm flex items-center gap-2">
+                                                        <Nut className="h-3 w-3 text-muted-foreground" />
+                                                        {p.name}
+                                                    </span>
+                                                    <span className="text-[10px] text-muted-foreground">{p.manufacturer || 'Unknown'} • {p.status}</span>
+                                                </div>
+                                                <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => addComponent('standard_part', p.id, p.name)}>
                                                     Add
                                                 </Button>
                                             </div>
@@ -377,6 +418,28 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Description</label>
                                 <Input disabled={readonly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Short description..." />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 col-span-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Weight (g)</label>
+                                    <Input
+                                        type="number"
+                                        disabled={readonly}
+                                        value={totalWeight}
+                                        onChange={e => setTotalWeight(e.target.value)}
+                                        placeholder="e.g. 1500"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Thickness (mm)</label>
+                                    <Input
+                                        type="number"
+                                        disabled={readonly}
+                                        value={totalThickness}
+                                        onChange={e => setTotalThickness(e.target.value)}
+                                        placeholder="e.g. 2.5"
+                                    />
+                                </div>
                             </div>
                             <div className="col-span-2 space-y-2">
                                 <label className="text-sm font-medium">Applicable Processes</label>

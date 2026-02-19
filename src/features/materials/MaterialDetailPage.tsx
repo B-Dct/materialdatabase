@@ -16,6 +16,7 @@ import { VariantManager } from './VariantManager';
 import { MaterialUsage } from './MaterialUsage';
 import { EntityStandardsManager } from '@/features/quality/EntityStandardsManager';
 import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
+import { HistoryLog } from '@/features/shared/HistoryLog';
 import { Ruler, Award, CheckCircle, Copy, Network } from 'lucide-react'; // Ensure imports are consolidated
 import type { Material } from '@/types/domain';
 import {
@@ -40,18 +41,26 @@ export function MaterialDetailPage() {
         fetchMeasurements,
         fetchSpecifications,
         updateMaterial,
-        deleteMaterial
+        deleteMaterial,
+        fetchProperties,
+        isLoading
     } = useAppStore();
 
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState<Partial<Material>>({});
     const [error, setError] = useState<string | null>(null);
 
+    // Initial load
     useEffect(() => {
+        // Always fetch if empty, or maybe stale? 
+        // For now, if empty is good check.
         if (materials.length === 0) fetchMaterials();
+
+        // Also fetch related data
         fetchMeasurements();
+        fetchProperties();
         if (id) fetchSpecifications(id, 'material');
-    }, [id, materials.length, fetchMaterials, fetchMeasurements, fetchSpecifications]);
+    }, [id, materials.length, fetchMaterials, fetchMeasurements, fetchSpecifications, fetchProperties]);
 
     const material = materials.find(m => m.id === id);
 
@@ -60,6 +69,17 @@ export function MaterialDetailPage() {
             setFormData(material);
         }
     }, [material, isEditing]);
+
+    if (isLoading && !material) {
+        return (
+            <div className="flex h-screen items-center justify-center">
+                <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                    <p className="text-muted-foreground">Loading Material...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (!material) {
         return (
@@ -449,6 +469,11 @@ export function MaterialDetailPage() {
                                 )}
                             </CardContent>
                         </Card>
+
+                        {/* History Log */}
+                        <div className="h-[400px]">
+                            <HistoryLog entityId={material.id} entityType="material" />
+                        </div>
 
                         {/* Meta Info Footer */}
                         <div className="text-xs text-muted-foreground grid grid-cols-2 lg:grid-cols-4 gap-4 px-2">

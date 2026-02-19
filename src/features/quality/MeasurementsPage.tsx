@@ -1,40 +1,200 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
-import { Badge } from "@/components/ui/badge";
-import { FileText, Power, Plus } from "lucide-react";
+import { FileText, Power, Plus, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
 
 export function MeasurementsPage() {
-    const { measurements, fetchMeasurements, materials, properties, fetchMaterials, fetchProperties, updateMeasurement } = useAppStore();
+    const { measurements, fetchMeasurements, materials, layups, assemblies, properties, fetchMaterials, fetchLayups, fetchAssemblies, fetchProperties, updateMeasurement } = useAppStore();
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchMeasurements();
         fetchMaterials();
+        fetchLayups();
+        fetchAssemblies();
         fetchProperties();
-    }, [fetchMeasurements, fetchMaterials, fetchProperties]);
+    }, [fetchMeasurements, fetchMaterials, fetchLayups, fetchAssemblies, fetchProperties]);
 
     const data = useMemo(() => {
         return measurements.map(m => {
             const prop = properties.find(p => p.id === m.propertyDefinitionId);
-            const mat = materials.find(mat => mat.id === m.materialId);
+
+            let parentName = "Unlinked";
+            let parentType = "Unknown";
+
+            if (m.materialId) {
+                const mat = materials.find(x => x.id === m.materialId);
+                parentName = mat?.name || "Unknown Material";
+                parentType = "Material";
+            } else if (m.layupId) {
+                const l = layups.find(x => x.id === m.layupId);
+                parentName = l?.name || "Unknown Layup";
+                parentType = "Layup";
+            } else if (m.assemblyId) {
+                const a = assemblies.find(x => x.id === m.assemblyId);
+                parentName = a?.name || "Unknown Assembly";
+                parentType = "Assembly";
+            }
+
             return {
                 ...m,
-                _materialName: mat?.name || "Unlinked",
+                _parentName: parentName,
+                _parentType: parentType,
                 _propertyName: prop?.name || m.propertyDefinitionId,
                 _isActive: m.isActive !== false
             };
         });
-    }, [measurements, properties, materials]);
+    }, [measurements, properties, materials, layups, assemblies]);
 
     const columns: ColumnDef<any>[] = [
         {
+            accessorKey: "date",
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="-ml-4"
+                >
+                    Date
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => format(new Date(row.getValue("date")), "dd.MM.yyyy"),
+            sortingFn: "datetime",
+        },
+        {
+            accessorKey: "orderNumber",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Order #
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => <span className="font-mono text-xs">{row.getValue("orderNumber")}</span>,
+        },
+        {
+            accessorKey: "referenceNumber",
+            header: ({ column }) => (
+                <Button variant="ghost" className="-ml-4" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+                    Ref #
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => <span className="font-mono text-xs">{row.getValue("referenceNumber") || "-"}</span>,
+        },
+        {
+            accessorKey: "_parentName",
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="-ml-4"
+                >
+                    Parent
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => (
+                <div className="flex flex-col">
+                    <span className="font-medium text-sm">{row.original._parentName}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase">{row.original._parentType}</span>
+                </div>
+            ),
+        },
+        {
+            accessorKey: "_propertyName",
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="-ml-4"
+                >
+                    Property
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => <span className="font-medium">{row.getValue("_propertyName")}</span>,
+        },
+        {
+            accessorKey: "resultValue",
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="-ml-4"
+                >
+                    Value
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            cell: ({ row }) => (
+                <span>
+                    {Number(row.getValue("resultValue")).toFixed(2)} <span className="text-muted-foreground text-xs">{row.original.unit}</span>
+                </span>
+            ),
+        },
+        {
+            accessorKey: "testMethod",
+            header: ({ column }) => {
+                const isFiltered = column.getIsFiltered();
+                return (
+                    <div className="flex items-center">
+                        Method
+                        {isFiltered && <div className="h-2 w-2 rounded-full bg-primary ml-2" title="Filtered" />}
+                    </div>
+                );
+            },
+            cell: ({ row }) => row.getValue("testMethod") || "-",
+            filterFn: (row, id, value) => {
+                return value.includes(row.getValue(id))
+            },
+        },
+        {
+            accessorKey: "laboratoryId",
+            header: ({ column }) => {
+                const isFiltered = column.getIsFiltered();
+                return (
+                    <div className="flex items-center">
+                        Lab
+                        {isFiltered && <div className="h-2 w-2 rounded-full bg-primary ml-2" title="Filtered" />}
+                    </div>
+                );
+            },
+            cell: ({ row }) => <span className="text-muted-foreground text-sm">{row.getValue("laboratoryId")}</span>,
+            filterFn: (row, id, value) => {
+                return value.includes(row.getValue(id))
+            },
+        },
+        {
+            accessorKey: "sourceType", // For filtering
+            header: "Source",
+            cell: ({ row }) => {
+                const m = row.original;
+                return m.sourceType === "pdf" ? (
+                    <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
+                        <FileText className="h-4 w-4" />
+                        <span className="truncate max-w-[100px]">{m.sourceFilename || "Report.pdf"}</span>
+                    </div>
+                ) : (
+                    <span className="text-muted-foreground text-xs">Manual Entry</span>
+                );
+            }
+        },
+        {
             accessorKey: "_isActive",
-            header: "Status",
+            header: ({ column }) => {
+                const isFiltered = column.getIsFiltered();
+                return (
+                    <div className="flex items-center">
+                        Status
+                        {isFiltered && <div className="h-2 w-2 rounded-full bg-primary ml-2" title="Filtered" />}
+                    </div>
+                );
+            },
             cell: ({ row }) => {
                 const isActive = row.original._isActive;
                 return (
@@ -54,78 +214,32 @@ export function MeasurementsPage() {
             },
             filterFn: (row, id, value) => {
                 const isActive = row.getValue(id) as boolean;
-                // value is array of strings e.g. ["active", "inactive"]
                 if (value.includes("active") && isActive) return true;
                 if (value.includes("inactive") && !isActive) return true;
                 return false;
             }
         },
-        {
-            accessorKey: "date",
-            header: "Date",
-            cell: ({ row }) => format(new Date(row.getValue("date")), "dd.MM.yyyy"),
-            sortingFn: "datetime",
-        },
-        {
-            accessorKey: "_materialName",
-            header: "Material",
-            cell: ({ row }) => (
-                row.original.materialId ? (
-                    <Badge variant="outline" className="font-mono">
-                        {row.getValue("_materialName")}
-                    </Badge>
-                ) : <span className="text-muted-foreground italic text-sm">Unlinked</span>
-            ),
-        },
-        {
-            accessorKey: "_propertyName",
-            header: "Property",
-            cell: ({ row }) => <span className="font-medium">{row.getValue("_propertyName")}</span>,
-        },
-        {
-            accessorKey: "resultValue",
-            header: "Value",
-            cell: ({ row }) => (
-                <span>
-                    {Number(row.getValue("resultValue")).toFixed(2)} <span className="text-muted-foreground text-xs">{row.original.unit}</span>
-                </span>
-            ),
-        },
-        {
-            accessorKey: "testMethod",
-            header: "Method",
-            cell: ({ row }) => row.getValue("testMethod") || "-",
-        },
-        {
-            accessorKey: "sourceType", // For filtering
-            header: "Source",
-            cell: ({ row }) => {
-                const m = row.original;
-                return m.sourceType === "pdf" ? (
-                    <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
-                        <FileText className="h-4 w-4" />
-                        <span className="truncate max-w-[100px]">{m.sourceFilename || "Report.pdf"}</span>
-                    </div>
-                ) : (
-                    <span className="text-muted-foreground text-xs">Manual Entry</span>
-                );
-            }
-        },
-        {
-            accessorKey: "laboratoryId",
-            header: "Lab",
-            cell: ({ row }) => <span className="text-muted-foreground text-sm">{row.getValue("laboratoryId")}</span>,
-        },
         // Hidden search column
         {
             id: "_search",
-            accessorFn: (row) => `${row._materialName} ${row._propertyName} ${row.sourceFilename || ''} ${row.testMethod || ''} ${row.laboratoryId || ''}`.toLowerCase(),
+            accessorFn: (row) => `${row.referenceNumber || ''} ${row.orderNumber || ''} ${row._parentName} ${row._propertyName} ${row.sourceFilename || ''} ${row.testMethod || ''} ${row.laboratoryId || ''}`.toLowerCase(),
             header: () => null,
             cell: () => null,
             enableHiding: true,
         },
-
     ];
+
+    // Filter logic
+    const [globalFilter, setGlobalFilter] = useState("");
+
+    const filteredData = useMemo(() => {
+        if (!globalFilter) return data;
+        const lowerFilter = globalFilter.toLowerCase();
+        return data.filter(item => {
+            const searchString = `${item._parentName || ''} ${item._propertyName || ''} ${item.sourceFilename || ''} ${item.testMethod || ''} ${item.laboratoryId || ''}`.toLowerCase();
+            return searchString.includes(lowerFilter);
+        });
+    }, [data, globalFilter]);
 
     return (
         <div className="h-full flex flex-col p-8 space-y-8 animate-in fade-in duration-500">
@@ -142,9 +256,12 @@ export function MeasurementsPage() {
             <div className="flex-1 overflow-hidden border rounded-md p-4">
                 <DataTable
                     columns={columns}
-                    data={data}
+                    data={filteredData}
                     enableGlobalFilter={true}
+                    globalFilter={globalFilter}
+                    onGlobalFilterChange={setGlobalFilter}
                     filterPlaceholder="Search measurements..."
+                    onRowClick={(item) => navigate(`/measurements/${item.id}`)}
                     facetedFilters={[
                         {
                             column: "_isActive",
@@ -153,6 +270,22 @@ export function MeasurementsPage() {
                                 { label: "Active", value: "active" },
                                 { label: "Inactive", value: "inactive" }
                             ]
+                        },
+                        {
+                            column: "testMethod",
+                            title: "Method",
+                            options: Array.from(new Set(data.map(m => m.testMethod).filter((m): m is string => !!m))).map(method => ({
+                                label: method,
+                                value: method
+                            }))
+                        },
+                        {
+                            column: "laboratoryId",
+                            title: "Lab",
+                            options: Array.from(new Set(data.map(m => m.laboratoryId).filter((m): m is string => !!m))).map(lab => ({
+                                label: lab,
+                                value: lab
+                            }))
                         }
                     ]}
                 />

@@ -21,7 +21,7 @@ export function AssemblyDetailPage() {
     const navigate = useNavigate();
     const {
         assemblies, fetchAssemblies, updateAssembly,
-        measurements, fetchMeasurements
+        measurements, fetchMeasurements, fetchProperties
     } = useAppStore();
 
     const [activeTab, setActiveTab] = useState("overview");
@@ -31,7 +31,8 @@ export function AssemblyDetailPage() {
     useEffect(() => {
         if (assemblies.length === 0) fetchAssemblies();
         if (measurements.length === 0) fetchMeasurements();
-    }, [id, fetchAssemblies, fetchMeasurements, assemblies.length, measurements.length]);
+        fetchProperties();
+    }, [id, fetchAssemblies, fetchMeasurements, assemblies.length, measurements.length, fetchProperties]);
 
     const assembly = assemblies.find(a => a.id === id);
 

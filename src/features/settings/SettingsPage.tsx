@@ -11,46 +11,9 @@ import { RefreshCw } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 
 export function SettingsPage() {
-    const { seedStandardProperties, fetchProperties, seedStandardTestMethods } = useAppStore();
+    const { seedStandardTestMethods } = useAppStore();
 
     const [seedError, setSeedError] = React.useState<string | null>(null);
-
-    const handleRestoreDefaults = async () => {
-        setSeedError(null);
-        if (confirm("Restore missing standard properties? This will NOT delete existing data.")) {
-            try {
-                await seedStandardProperties();
-                await fetchProperties();
-                alert("Success! Standard properties restored.");
-            } catch (e: any) {
-                console.error("Restore failed:", e);
-                const msg = e.message || "";
-
-                // If unique constraint or duplicate error (or custom error we threw)
-                if (msg.includes("unique") || msg.includes("duplicate") || msg.includes("exist")) {
-                    if (confirm("Error: Properties seem to exist but might be hidden (Permissions/RLS).\n\nDo you want to force create them with suffix ' (Std)'?")) {
-                        try {
-                            await seedStandardProperties({ suffix: "(Std)" });
-                            await fetchProperties();
-                            alert("Success! Created with suffix.");
-                            return;
-                        } catch (e2: any) {
-                            setSeedError(e2.message);
-                            return;
-                        }
-                    }
-                }
-
-                setSeedError(msg || "Unknown error occurred during seeding.");
-                if (typeof e === 'object') {
-                    try {
-                        const detailed = JSON.stringify(e, null, 2);
-                        setSeedError(`${msg}\n\nDetails:\n${detailed}`);
-                    } catch (err) { /* ignore circular */ }
-                }
-            }
-        }
-    };
 
     return (
         <div className="p-8 space-y-6">
@@ -76,9 +39,6 @@ export function SettingsPage() {
                     }}>
                         <RefreshCw className="mr-2 h-4 w-4" /> Seed Aerospace Methods
                     </Button>
-                    <Button variant="outline" onClick={handleRestoreDefaults}>
-                        <RefreshCw className="mr-2 h-4 w-4" /> Restore Standard Properties
-                    </Button>
                 </div>
             </div>
 
@@ -96,7 +56,7 @@ export function SettingsPage() {
                     <TabsTrigger value="methods">Test Methods</TabsTrigger>
                     <TabsTrigger value="processes">Processes</TabsTrigger>
                     <TabsTrigger value="labs">Laboratories</TabsTrigger>
-                    <TabsTrigger value="properties_legacy" className="opacity-50">Definitions</TabsTrigger>
+                    <TabsTrigger value="properties_legacy">Properties</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="types" className="space-y-4">

@@ -1,5 +1,14 @@
 export type EntityStatus = "active" | "standard" | "restricted" | "obsolete" | "engineering";
 
+export interface StandardPart {
+    id: string;
+    name: string; // Designation
+    manufacturer: string;
+    supplier: string;
+    status: EntityStatus;
+    createdAt: string;
+}
+
 export interface ProcessParameter {
     key: string;
     value: string | number;
@@ -246,7 +255,7 @@ export interface ComponentConfig {
 
 export interface AssemblyComponent {
     id: string; // Unique instance ID
-    componentType: "layup" | "material"; // Removed sub-assembly for now
+    componentType: "layup" | "material" | "standard_part"; // Removed sub-assembly for now
     componentId: string; // ID of the Layup or Material(Variant)
     componentName: string; // Snapshot name
     quantity: number;
@@ -278,4 +287,17 @@ export interface Assembly {
 
     createdAt: string;
     version: number;
+
+    // Manual Fields
+    totalWeight?: number;
+    totalThickness?: number;
+}
+
+export interface EntityHistory {
+    id: string;
+    entityType: 'material' | 'layup' | 'assembly';
+    entityId: string;
+    content: string;
+    createdAt: string;
+    createdBy?: string; // User ID
 }
