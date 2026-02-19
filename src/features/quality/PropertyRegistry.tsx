@@ -10,6 +10,17 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from 'sonner';
+import {
     Select,
     SelectContent,
     SelectItem,
@@ -20,6 +31,7 @@ import { Plus, Pencil, ArrowUpDown, Trash } from 'lucide-react';
 import { type PropertyDefinition } from '@/types/domain';
 import { useAuth } from '@/lib/auth';
 import { DataTable } from '@/components/ui/data-table';
+import { Badge } from '@/components/ui/badge';
 import type { ColumnDef } from '@tanstack/react-table';
 
 export function PropertyRegistry() {
@@ -28,12 +40,15 @@ export function PropertyRegistry() {
     const [open, setOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [currentId, setCurrentId] = useState<string | null>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [propertyToDelete, setPropertyToDelete] = useState<PropertyDefinition | null>(null);
 
     const [formData, setFormData] = useState<Omit<PropertyDefinition, 'id'>>({
         name: '',
         unit: '',
         dataType: 'numeric',
         category: 'physical',
+        scope: 'material', // Default
         testMethods: []
     });
 
@@ -50,6 +65,7 @@ export function PropertyRegistry() {
             unit: prop.unit,
             dataType: prop.dataType,
             category: prop.category,
+            scope: prop.scope || 'material',
             testMethods: prop.testMethods || [],
             statsConfig: prop.statsConfig
         });
@@ -64,7 +80,7 @@ export function PropertyRegistry() {
         if (!val) {
             setIsEditing(false);
             setCurrentId(null);
-            setFormData({ name: '', unit: '', dataType: 'numeric', category: 'physical', testMethods: [] });
+            setFormData({ name: '', unit: '', dataType: 'numeric', category: 'physical', scope: 'material', testMethods: [] });
             setMethodsInput('');
         }
     };
@@ -90,6 +106,23 @@ export function PropertyRegistry() {
         }
     };
 
+    const handleDeleteConfirm = async () => {
+        if (!propertyToDelete) return;
+        try {
+            await deleteProperty(propertyToDelete.id);
+            setDeleteDialogOpen(false);
+            setPropertyToDelete(null);
+            toast.success(`Property "${propertyToDelete.name}" deleted`);
+        } catch (e: any) {
+            console.error("Failed to delete property:", e);
+            if (e.message?.includes("foreign key") || e.code === "23503" || e.message?.includes("violate")) {
+                toast.error(`Cannot delete "${propertyToDelete.name}" because it is currently in use.`);
+            } else {
+                toast.error(`Failed to delete property: ${e.message}`);
+            }
+        }
+    };
+
     const columns: ColumnDef<PropertyDefinition>[] = [
         {
             accessorKey: "name",
@@ -112,6 +145,11 @@ export function PropertyRegistry() {
             filterFn: (row, id, value) => {
                 return value.includes(row.getValue(id));
             },
+        },
+        {
+            accessorKey: "scope",
+            header: "Scope",
+            cell: ({ row }) => <Badge variant="outline">{row.getValue("scope") || 'material'}</Badge>,
         },
         {
             accessorKey: "testMethods",
@@ -155,20 +193,9 @@ export function PropertyRegistry() {
                             variant="ghost"
                             size="icon"
                             className="text-destructive hover:text-destructive"
-                            onClick={async () => {
-                                if (window.confirm(`Are you sure you want to delete "${row.original.name}"? This cannot be undone.`)) {
-                                    try {
-                                        await deleteProperty(row.original.id);
-                                    } catch (e: any) {
-                                        console.error("Failed to delete property:", e);
-                                        // Check for Supabase FK violation code (23503) or generic message
-                                        if (e.message?.includes("foreign key") || e.code === "23503" || e.message?.includes("violate")) {
-                                            alert(`Cannot delete "${row.original.name}" because it is currently in use by Measurements or Test Methods.\n\nPlease remove it from those items first.`);
-                                        } else {
-                                            alert(`Failed to delete property: ${e.message}`);
-                                        }
-                                    }
-                                }
+                            onClick={() => {
+                                setPropertyToDelete(row.original);
+                                setDeleteDialogOpen(true);
                             }}
                         >
                             <Trash className="h-4 w-4" />
@@ -267,6 +294,22 @@ export function PropertyRegistry() {
                                     </Select>
                                 </div>
                                 <div className="grid gap-2">
+                                    <label>Scope / Context</label>
+                                    <Select
+                                        value={formData.scope}
+                                        onValueChange={(val: any) => setFormData({ ...formData, scope: val })}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="material">Material (Direct)</SelectItem>
+                                            <SelectItem value="layup">Layup Dependent</SelectItem>
+                                            <SelectItem value="assembly">Assembly Dependent</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="grid gap-2">
                                     <label>Input Structure</label>
                                     <Select
                                         value={formData.inputStructure || 'single'}
@@ -339,6 +382,24 @@ export function PropertyRegistry() {
                 filterPlaceholder="Filter properties..."
                 facetedFilters={categoryFilters}
             />
+
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Property?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete <span className="font-semibold text-foreground">{propertyToDelete?.name}</span>?
+                            This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setPropertyToDelete(null)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

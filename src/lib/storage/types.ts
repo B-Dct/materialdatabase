@@ -13,7 +13,11 @@ import type {
     MaterialSpecification,
     TestMethod,
     EntityHistory,
-    StandardPart
+    StandardPart,
+    MaterialTypeDefinition,
+    Project,
+    ProjectMaterialList,
+    ProjectProcessList
 } from '@/types/domain';
 
 export interface StorageRepository {
@@ -35,11 +39,16 @@ export interface StorageRepository {
     createLayup(layup: Omit<Layup, 'id' | 'createdAt' | 'version'>): Promise<Layup>;
     updateLayup(id: string, updates: Partial<Layup>): Promise<void>;
     deleteLayup(id: string): Promise<void>;
+    archiveLayup(id: string): Promise<void>;
+    getLayupUsage(layupId: string): Promise<{ assemblyId: string, assemblyName: string }[]>;
 
     // Assemblies
     getAssemblies(): Promise<Assembly[]>;
     createAssembly(assembly: Omit<Assembly, 'id' | 'createdAt' | 'components'>, components: Omit<AssemblyComponent, 'id' | 'sequence'>[]): Promise<Assembly>;
     updateAssembly(id: string, updates: Partial<Assembly>): Promise<void>;
+    deleteAssembly(id: string): Promise<void>;
+    archiveAssembly(id: string): Promise<void>;
+    getAssemblyUsage(assemblyId: string): Promise<{ assemblyId: string, assemblyName: string }[]>;
     // Note: Assembly components might need specific methods if updated separately, 
     // but typically they are updated with the assembly or generic update logic.
 
@@ -52,26 +61,35 @@ export interface StorageRepository {
     getRequirementProfiles(): Promise<RequirementProfile[]>;
     createRequirementProfile(profile: Omit<RequirementProfile, 'id'>): Promise<RequirementProfile>;
     updateRequirementProfile(id: string, updates: Partial<RequirementProfile>): Promise<void>;
+    deleteRequirementProfile(id: string): Promise<void>;
 
-    getLaboratories(): Promise<Laboratory[]>;
+    getLaboratories(includeArchived?: boolean): Promise<Laboratory[]>;
     createLaboratory(lab: Omit<Laboratory, 'id'>): Promise<Laboratory>;
     updateLaboratory(id: string, updates: Partial<Laboratory>): Promise<void>;
+    archiveLaboratory(id: string): Promise<void>;
+    deleteLaboratory(id: string): Promise<void>;
 
     getMeasurements(): Promise<Measurement[]>;
     createMeasurement(measurement: Omit<Measurement, 'id' | 'createdAt'>): Promise<Measurement>;
     updateMeasurement(id: string, updates: Partial<Measurement>): Promise<void>;
+    deleteMeasurement(id: string): Promise<void>;
 
-    getProcesses(): Promise<ManufacturingProcess[]>;
+    getProcesses(includeArchived?: boolean): Promise<ManufacturingProcess[]>;
     createProcess(process: Omit<ManufacturingProcess, 'id'>): Promise<ManufacturingProcess>;
+    updateProcess(id: string, updates: Partial<ManufacturingProcess>): Promise<void>;
+    archiveProcess(id: string): Promise<void>;
+    deleteProcess(id: string): Promise<void>;
 
     getTestMethods(): Promise<TestMethod[]>;
     createTestMethod(method: Omit<TestMethod, 'id'>): Promise<TestMethod>;
     updateTestMethod(id: string, updates: Partial<TestMethod>): Promise<void>;
     deleteTestMethod(id: string): Promise<void>;
 
-    getMaterialTypes(): Promise<string[]>;
-    createMaterialType(type: string): Promise<string>;
+    getMaterialTypes(includeArchived?: boolean): Promise<MaterialTypeDefinition[]>;
+    createMaterialType(type: string): Promise<MaterialTypeDefinition>;
     deleteMaterialType(type: string): Promise<void>;
+    archiveMaterialType(type: string): Promise<void>;
+    restoreMaterialType(type: string): Promise<void>;
 
     // Specifications
     getSpecifications(entityId: string, entityType?: 'material' | 'layup' | 'assembly'): Promise<MaterialSpecification[]>;
@@ -94,4 +112,26 @@ export interface StorageRepository {
     createStandardPart(part: Omit<StandardPart, 'id' | 'createdAt'>): Promise<StandardPart>;
     updateStandardPart(id: string, updates: Partial<StandardPart>): Promise<void>;
     deleteStandardPart(id: string): Promise<void>;
+
+    // Storage / Files
+    uploadFile(bucket: string, path: string, file: File): Promise<string>;
+
+    // Projects
+    getProjects(): Promise<Project[]>;
+    createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project>;
+    updateProject(id: string, updates: Partial<Project>): Promise<void>;
+    deleteProject(id: string): Promise<void>;
+
+    // Project Lists
+    getProjectLists(projectId: string): Promise<{ materialLists: ProjectMaterialList[], processLists: ProjectProcessList[] }>;
+
+    // Material Lists
+    createMaterialList(list: Omit<ProjectMaterialList, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProjectMaterialList>;
+    updateMaterialList(id: string, updates: Partial<ProjectMaterialList>): Promise<void>;
+    deleteMaterialList(id: string): Promise<void>;
+
+    // Process Lists
+    createProcessList(list: Omit<ProjectProcessList, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProjectProcessList>;
+    updateProcessList(id: string, updates: Partial<ProjectProcessList>): Promise<void>;
+    deleteProcessList(id: string): Promise<void>;
 }

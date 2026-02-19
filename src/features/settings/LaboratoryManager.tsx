@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FlaskConical, MapPin, Edit, Save } from 'lucide-react';
+import { Plus, FlaskConical, MapPin, Edit, Save, Trash2, Archive, ArchiveRestore } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -14,10 +14,21 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 export function LaboratoryManager() {
-    const { laboratories, testMethods, addLaboratory, updateLaboratory } = useAppStore();
+    const { laboratories, testMethods, addLaboratory, updateLaboratory, fetchLaboratories, archiveLaboratory, deleteLaboratory } = useAppStore();
 
     // New Lab State
     const [isCreating, setIsCreating] = useState(false);
@@ -25,12 +36,25 @@ export function LaboratoryManager() {
     const [newLabCity, setNewLabCity] = useState("");
     const [newLabCountry, setNewLabCountry] = useState("");
 
+    // Archive State
+    const [showArchived, setShowArchived] = useState(false);
+
+    // Initial Fetch (and on toggle)
+    useEffect(() => {
+        fetchLaboratories(showArchived);
+    }, [showArchived]);
+
+
     // Editing State (Methods)
     const [editingMethodsLabId, setEditingMethodsLabId] = useState<string | null>(null);
 
     // Editing State (Details)
     const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+
     const [editingLab, setEditingLab] = useState<{ id: string, name: string, city: string, country: string } | null>(null);
+
+    const [labToArchive, setLabToArchive] = useState<string | null>(null);
+    const [labToDelete, setLabToDelete] = useState<string | null>(null);
 
     const handleCreate = async () => {
         if (!newLabName.trim()) return;
@@ -47,14 +71,7 @@ export function LaboratoryManager() {
     };
 
     const toggleMethod = (lab: any, methodId: string) => {
-        const currentmethods = lab.authorizedMethods || []; // legacy typo fix: authorizedMethods
-        // methodId here should be the method NAME or ID? Domain says string[]. 
-        // Existing mock uses names like 'ISO 527-4'.
-        // Let's stick to names as per existing mock data if IDs not used.
-        // store.ts mock data: authorizedMethods: ['ISO 527-4', 'ISO 1183']
-        // So we use method.name
-
-        // Find method name
+        const currentmethods = lab.authorizedMethods || [];
         const methodObj = testMethods.find(m => m.id === methodId);
         const methodVal = methodObj ? methodObj.name : methodId;
 
@@ -87,6 +104,28 @@ export function LaboratoryManager() {
         setEditingLab(null);
     };
 
+    const handleArchiveClick = (id: string) => {
+        setLabToArchive(id);
+    };
+
+    const confirmArchive = async () => {
+        if (labToArchive) {
+            await archiveLaboratory(labToArchive);
+            setLabToArchive(null);
+        }
+    };
+
+    const handleDeleteClick = (id: string) => {
+        setLabToDelete(id);
+    };
+
+    const confirmDelete = async () => {
+        if (labToDelete) {
+            await deleteLaboratory(labToDelete);
+            setLabToDelete(null);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -97,9 +136,15 @@ export function LaboratoryManager() {
                     </p>
                 </div>
                 {!isCreating && (
-                    <Button onClick={() => setIsCreating(true)} size="sm">
-                        <Plus className="mr-2 h-4 w-4" /> Add Laboratory
-                    </Button>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center space-x-2">
+                            <Switch id="show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
+                            <Label htmlFor="show-archived">Show Archived</Label>
+                        </div>
+                        <Button onClick={() => setIsCreating(true)} size="sm">
+                            <Plus className="mr-2 h-4 w-4" /> Add Laboratory
+                        </Button>
+                    </div>
                 )}
             </div>
 
@@ -145,7 +190,7 @@ export function LaboratoryManager() {
 
             <div className="grid gap-4">
                 {laboratories.map(lab => (
-                    <Card key={lab.id}>
+                    <Card key={lab.id} className={(lab as any).entryStatus === 'archived' ? 'opacity-60 bg-muted/20' : ''}>
                         <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
                                 <div className="space-y-1">
@@ -153,6 +198,9 @@ export function LaboratoryManager() {
                                         <CardTitle className="text-base flex items-center gap-2">
                                             <FlaskConical className="h-4 w-4 text-muted-foreground" />
                                             {lab.name}
+                                            {(lab as any).entryStatus === 'archived' && (
+                                                <Badge variant="outline" className="text-muted-foreground text-[10px] h-5">Archived</Badge>
+                                            )}
                                         </CardTitle>
                                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditDetails(lab)}>
                                             <Edit className="h-3 w-3" />
@@ -163,13 +211,50 @@ export function LaboratoryManager() {
                                         {lab.city || "Unknown City"}, {lab.country || "Unknown Country"}
                                     </div>
                                 </div>
-                                <Button
-                                    variant={editingMethodsLabId === lab.id ? "secondary" : "outline"}
-                                    size="sm"
-                                    onClick={() => setEditingMethodsLabId(editingMethodsLabId === lab.id ? null : lab.id)}
-                                >
-                                    {editingMethodsLabId === lab.id ? "Done" : "Manage Methods"}
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                    {/* Action Buttons */}
+                                    <Button
+                                        variant={editingMethodsLabId === lab.id ? "secondary" : "outline"}
+                                        size="sm"
+                                        onClick={() => setEditingMethodsLabId(editingMethodsLabId === lab.id ? null : lab.id)}
+                                    >
+                                        {editingMethodsLabId === lab.id ? "Done" : "Manage Methods"}
+                                    </Button>
+
+                                    {(lab as any).entryStatus !== 'archived' ? (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                            onClick={() => handleArchiveClick(lab.id)}
+                                            title="Archive (Hide from lists)"
+                                        >
+                                            <Archive className="h-4 w-4" />
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                            onClick={() => updateLaboratory(lab.id, { entryStatus: 'active' })}
+                                            title="Restore (Unarchive)"
+                                        >
+                                            <ArchiveRestore className="h-4 w-4" />
+                                        </Button>
+                                    )}
+
+                                    {/* Delete Button (Optional for now, or Restricted) */}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        title="Delete Permanently"
+                                        onClick={() => handleDeleteClick(lab.id)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+
+                                </div>
                             </div>
                         </CardHeader>
                         <CardContent>
@@ -246,6 +331,37 @@ export function LaboratoryManager() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+
+            <AlertDialog open={!!labToArchive} onOpenChange={(open) => !open && setLabToArchive(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Archive Laboratory?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to archive this laboratory? It will be hidden from selection lists but preserved.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmArchive} className="bg-amber-600 hover:bg-amber-700">Archive</AlertDialogAction>
+                    </AlertDialogFooter>
+
+                </AlertDialogContent>
+            </AlertDialog >
+
+            <AlertDialog open={!!labToDelete} onOpenChange={(open) => !open && setLabToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Laboratory?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to PERMANENTLY delete this laboratory? This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </div >
     );
 }

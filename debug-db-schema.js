@@ -1,42 +1,27 @@
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
-const supabaseUrl = 'https://ndumzudeubllxfuifdex.supabase.co';
-const supabaseAnonKey = 'sb_publishable_goGfjHUT3PDgGHTsJkRBNQ_GRkd6wQF';
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-async function test() {
-    console.log("Testing material_variants insert...");
-
-    // 1. Get a material ID
-    const { data: mats } = await supabase.from('materials').select('id').limit(1);
-    if (!mats || mats.length === 0) {
-        console.error("No materials found to test with.");
-        return;
-    }
-    const matId = mats[0].id;
-    console.log("Using material ID:", matId);
-
-    // 2. Try insert with full logging
-    const payload = {
-        base_material_id: matId,
-        variant_name: "Debug Variant " + Date.now(),
-        // description: "Test" 
-    };
-
-    const { data, error } = await supabase
-        .from('material_variants')
-        .insert(payload)
-        .select();
-
-    if (error) {
-        console.error("INSERT ERROR:");
-        console.error(JSON.stringify(error, null, 2));
-    } else {
-        console.log("INSERT SUCCESS. Data:");
-        console.log(JSON.stringify(data, null, 2));
-    }
+if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing env vars");
+    process.exit(1);
 }
 
-test();
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+async function checkRLS() {
+    console.log("Checking RLS policies...");
+    // We cannot query pg_policies directly via postgrest usually unless exposed.
+    // But we can try via rpc if we had one.
+    // Instead, let's try to DELETE the spec we created in the loop?
+    // Actually, I already did that in 'repro_delete_spec.ts' and it SUCCEEDED.
+    // So ANON key HAS permission to delete.
+
+    console.log("RLS check skipped as 'repro_delete_spec.ts' already proved DELETE works with ANON key.");
+}
+
+checkRLS();

@@ -1,3 +1,5 @@
+
+import { toast } from 'sonner';
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
@@ -15,7 +17,11 @@ import type {
     MaterialSpecification,
     TestMethod,
     EntityHistory,
-    StandardPart
+    StandardPart,
+    MaterialTypeDefinition,
+    Project,
+    ProjectMaterialList,
+    ProjectProcessList
 } from '@/types/domain'
 import { SupabaseStorage } from './storage/SupabaseStorage';
 import type { StorageRepository } from './storage/types';
@@ -53,7 +59,9 @@ interface AppState {
     addLayup: (layup: Omit<Layup, 'id' | 'createdAt' | 'version'>) => Promise<void>;
     updateLayup: (id: string, updates: Partial<Layup>) => Promise<void>;
     deleteLayup: (id: string) => Promise<void>;
+    archiveLayup: (id: string) => Promise<void>;
     getLayupsByVariant: (variantId: string) => Promise<Layup[]>;
+    getLayupUsage: (id: string) => Promise<any[]>;
 
     // Assembly Logic
     fetchAssemblies: () => Promise<void>;
@@ -62,6 +70,9 @@ interface AppState {
         components: Omit<AssemblyComponent, 'id' | 'sequence'>[]
     ) => Promise<void>;
     updateAssembly: (id: string, updates: Partial<Assembly>) => Promise<void>;
+    deleteAssembly: (id: string) => Promise<void>;
+    archiveAssembly: (id: string) => Promise<void>;
+    getAssemblyUsage: (id: string) => Promise<any[]>;
 
     // Quality Logic
     fetchProperties: () => Promise<void>;
@@ -73,19 +84,26 @@ interface AppState {
     fetchRequirementProfiles: () => Promise<void>;
     addRequirementProfile: (profile: Omit<RequirementProfile, 'id'>) => Promise<void>;
     updateRequirementProfile: (id: string, updates: Partial<RequirementProfile>) => Promise<void>;
+    deleteRequirementProfile: (id: string) => Promise<void>;
 
-    fetchLaboratories: () => Promise<void>;
+    fetchLaboratories: (includeArchived?: boolean) => Promise<void>;
     addLaboratory: (lab: Omit<Laboratory, 'id'>) => Promise<void>;
     updateLaboratory: (id: string, updates: Partial<Laboratory>) => Promise<void>;
+    archiveLaboratory: (id: string) => Promise<void>;
+    deleteLaboratory: (id: string) => Promise<void>;
 
     // Measurements
     fetchMeasurements: () => Promise<void>;
     addMeasurement: (measurement: Omit<Measurement, 'id' | 'createdAt'>) => Promise<void>;
     updateMeasurement: (id: string, updates: Partial<Measurement>) => Promise<void>;
+    deleteMeasurement: (id: string) => Promise<void>;
 
     // Processes
-    fetchProcesses: () => Promise<void>;
+    fetchProcesses: (includeArchived?: boolean) => Promise<void>;
     addProcess: (process: Omit<ManufacturingProcess, 'id'>) => Promise<void>;
+    updateProcess: (id: string, updates: Partial<ManufacturingProcess>) => Promise<void>;
+    archiveProcess: (id: string) => Promise<void>;
+    deleteProcess: (id: string) => Promise<void>;
 
     // Test Methods
     fetchTestMethods: () => Promise<void>;
@@ -94,13 +112,17 @@ interface AppState {
     deleteTestMethod: (id: string) => Promise<void>;
 
     // Material Types
-    materialTypes: string[];
-    fetchMaterialTypes: () => Promise<void>;
+    // Material Types
+    materialTypes: MaterialTypeDefinition[];
+    fetchMaterialTypes: (includeArchived?: boolean) => Promise<void>;
     addMaterialType: (type: string) => Promise<void>;
     deleteMaterialType: (type: string) => Promise<void>;
+    archiveMaterialType: (type: string) => Promise<void>;
+    restoreMaterialType: (type: string) => Promise<void>;
 
     // Specification Actions
     fetchSpecifications: (entityId: string, entityType?: 'material' | 'layup' | 'assembly') => Promise<void>;
+    fetchSpecificationsForEntities: (entities: { id: string, type: 'material' | 'layup' | 'assembly' }[]) => Promise<void>;
     addSpecification: (spec: Omit<MaterialSpecification, 'createdAt' | 'id'> & { id?: string }) => Promise<void>;
     deleteSpecification: (id: string) => Promise<void>;
 
@@ -126,6 +148,30 @@ interface AppState {
     addStandardPart: (part: Omit<StandardPart, 'id' | 'createdAt'>) => Promise<void>;
     updateStandardPart: (id: string, updates: Partial<StandardPart>) => Promise<void>;
     deleteStandardPart: (id: string) => Promise<void>;
+
+    // Projects
+    projects: Project[];
+    currentProject: Project | null;
+    currentProjectLists: { materialLists: ProjectMaterialList[], processLists: ProjectProcessList[] };
+    fetchProjects: () => Promise<void>;
+    addProject: (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
+    deleteProject: (id: string) => Promise<void>;
+    setCurrentProject: (project: Project | null) => void;
+
+    // Project Lists
+    fetchProjectLists: (projectId: string) => Promise<void>;
+
+    createMaterialList: (list: Omit<ProjectMaterialList, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateMaterialList: (id: string, updates: Partial<ProjectMaterialList>) => Promise<void>;
+    deleteMaterialList: (id: string) => Promise<void>;
+
+    createProcessList: (list: Omit<ProjectProcessList, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateProcessList: (id: string, updates: Partial<ProjectProcessList>) => Promise<void>;
+    deleteProcessList: (id: string) => Promise<void>;
+
+    // Helpers
+    uploadFile: (file: File, bucket?: string, path?: string) => Promise<string>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -144,10 +190,20 @@ export const useAppStore = create<AppState>()(
             materialTypes: [],
             specifications: [],
             standardParts: [],
+            projects: [],
+            currentProject: null,
+            currentProjectLists: { materialLists: [], processLists: [] },
             documentCategories: ["Datasheet", "Test Report", "Certificate", "Specification", "Other"],
             isLoading: false,
             error: null,
             history: [],
+
+            // --- Helpers ---
+            uploadFile: async (file, bucket = 'documents', path) => {
+                const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${file.name}`;
+                const finalPath = path || uniqueName;
+                return await storage.uploadFile(bucket, finalPath, file);
+            },
 
             // --- Materials ---
             fetchMaterials: async () => {
@@ -295,15 +351,43 @@ export const useAppStore = create<AppState>()(
             deleteLayup: async (id) => {
                 set({ isLoading: true });
                 try {
+                    // Check usage
+                    const usages = await storage.getLayupUsage(id);
+                    if (usages.length > 0) {
+                        const names = usages.map(u => u.assemblyName).join(", ");
+                        throw new Error(`DEPENDENCY_ERROR: Used in assemblies: ${names}`);
+                    }
+
                     await storage.deleteLayup(id);
                     set((state) => ({
                         layups: state.layups.filter((l) => l.id !== id),
                     }));
                 } catch (e: any) {
                     set({ error: e.message });
+                    throw e;
                 } finally {
                     set({ isLoading: false });
                 }
+            },
+
+            archiveLayup: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.archiveLayup(id);
+                    set((state) => ({
+                        layups: state.layups.map(l => l.id === id ? { ...l, status: 'obsolete' } : l),
+                    }));
+                    toast.success("Layup archived successfully");
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(e.message || "Failed to archive layup");
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            getLayupUsage: async (id) => {
+                return await storage.getLayupUsage(id);
             },
 
             // --- Assemblies ---
@@ -343,6 +427,48 @@ export const useAppStore = create<AppState>()(
                 } finally {
                     set({ isLoading: false });
                 }
+            },
+
+            deleteAssembly: async (id) => {
+                set({ isLoading: true });
+                try {
+                    // Check usage
+                    const usages = await storage.getAssemblyUsage(id);
+                    if (usages.length > 0) {
+                        const names = usages.map(u => u.assemblyName).join(", ");
+                        throw new Error(`DEPENDENCY_ERROR: Used in other assemblies: ${names}`);
+                    }
+
+                    await storage.deleteAssembly(id);
+                    set((state) => ({
+                        assemblies: state.assemblies.filter((a) => a.id !== id),
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            archiveAssembly: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.archiveAssembly(id);
+                    set((state) => ({
+                        assemblies: state.assemblies.map(a => a.id === id ? { ...a, status: 'obsolete' } : a),
+                    }));
+                    toast.success("Assembly archived successfully");
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(e.message || "Failed to archive assembly");
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            getAssemblyUsage: async (id) => {
+                return await storage.getAssemblyUsage(id);
             },
 
             // --- Properties ---
@@ -538,22 +664,55 @@ export const useAppStore = create<AppState>()(
                 }
             },
 
-            // --- Laboratories ---
-            fetchLaboratories: async () => {
+            deleteRequirementProfile: async (id) => {
                 set({ isLoading: true });
                 try {
-                    const labs = await storage.getLaboratories();
-                    if (labs.length === 0) {
-                        const mockLabs: Laboratory[] = [
-                            { id: 'l1', name: 'In-House Testing Lab', authorizedMethods: ['ISO 527-4', 'ISO 1183'] },
-                            { id: 'l2', name: 'External Certified Lab GmbH', authorizedMethods: ['ISO 527-4', 'DSC'] }
-                        ];
-                        set({ laboratories: mockLabs });
-                    } else {
-                        set({ laboratories: labs });
+                    // Check usage? (This should ideally be in repo or here)
+                    // We can check usage against local state materials for instant feedback
+                    const state = get();
+                    const isUsed = state.materials.some(m => m.assignedProfileIds?.includes(id));
+                    if (isUsed) {
+                        throw new Error("Cannot delete standard: It is assigned to one or more materials.");
                     }
+
+                    await storage.deleteRequirementProfile(id);
+                    set(state => ({
+                        requirementProfiles: state.requirementProfiles.filter(p => p.id !== id)
+                    }));
                 } catch (e: any) {
                     set({ error: e.message });
+                    // Re-throw to let UI handle it (e.g. show toast)
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // --- Laboratories ---
+            fetchLaboratories: async (includeArchived = false) => {
+                set({ isLoading: true });
+                try {
+                    const labs = await storage.getLaboratories(includeArchived);
+                    set({ laboratories: labs });
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            archiveLaboratory: async (id) => {
+                set({ isLoading: true });
+                try {
+                    console.log("Store: Archiving laboratory", id);
+                    await storage.archiveLaboratory(id);
+                    // Optimistic update: remove it from list (assuming list shows active only)
+                    set(state => ({ laboratories: state.laboratories.filter(l => l.id !== id) }));
+                    console.log("Store: Archive laboratory success", id);
+                    toast.success("Laboratory archived successfully");
+                } catch (e: any) {
+                    console.error("Store: Archive laboratory failed", e);
+                    toast.error(e.message || "Failed to archive laboratory");
+                    set({ error: e.message || "Failed to archive laboratory" });
                 } finally {
                     set({ isLoading: false });
                 }
@@ -568,9 +727,30 @@ export const useAppStore = create<AppState>()(
             },
             updateLaboratory: async (id, updates) => {
                 // Not supported in repo yet, mock logic
-                set(state => ({
-                    laboratories: state.laboratories.map(l => l.id === id ? { ...l, ...updates } : l)
-                }));
+                try {
+                    await storage.updateLaboratory(id, updates);
+                    set(state => ({
+                        laboratories: state.laboratories.map(l => l.id === id ? { ...l, ...updates } : l)
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                }
+            },
+            deleteLaboratory: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.deleteLaboratory(id);
+                    set((state) => ({
+                        laboratories: state.laboratories.filter((l) => l.id !== id),
+                    }));
+                    toast.success("Laboratory deleted successfully");
+                } catch (e: any) {
+                    console.error("Store: Delete laboratory failed", e);
+                    toast.error(e.message || "Failed to delete laboratory");
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
             },
 
             // --- Measurements ---
@@ -609,9 +789,15 @@ export const useAppStore = create<AppState>()(
                     set(state => ({
                         measurements: state.measurements.map(m => {
                             if (m.id === id) {
-                                // Important: We must also merge processParams in local state if relevant
+                                // Important: We must also merge processParams in local state to keep it in sync
                                 const newParams = { ...m.processParams };
+
+                                // Sync metadata into processParams
                                 if (updates.isActive !== undefined) newParams.isActive = updates.isActive;
+                                if (updates.orderNumber !== undefined) newParams.orderNumber = updates.orderNumber;
+                                if (updates.referenceNumber !== undefined) newParams.referenceNumber = updates.referenceNumber;
+                                if (updates.comment !== undefined) newParams.comment = updates.comment;
+
                                 return { ...m, ...updates, processParams: newParams };
                             }
                             return m;
@@ -624,13 +810,40 @@ export const useAppStore = create<AppState>()(
                 }
             },
 
-            // --- Processes ---
-            fetchProcesses: async () => {
+            deleteMeasurement: async (id) => {
+                set({ isLoading: true });
                 try {
-                    const processes = await storage.getProcesses();
+                    await storage.deleteMeasurement(id);
+                    set((state) => ({
+                        measurements: state.measurements.filter((m) => m.id !== id),
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // --- Processes ---
+            fetchProcesses: async (includeArchived = false) => {
+                try {
+                    const processes = await storage.getProcesses(includeArchived);
                     set({ processes });
                 } catch (e: any) {
                     set({ error: e.message });
+                }
+            },
+            archiveProcess: async (id) => {
+                try {
+                    console.log("Store: Archiving process", id);
+                    await storage.archiveProcess(id);
+                    set(state => ({ processes: state.processes.filter(p => p.id !== id) }));
+                    console.log("Store: Archive success", id);
+                    toast.success("Process archived successfully");
+                } catch (e: any) {
+                    console.error("Store: Archive failed", e);
+                    toast.error(e.message || "Failed to archive process");
+                    set({ error: e.message || "Failed to archive process" });
                 }
             },
             addProcess: async (process) => {
@@ -639,6 +852,32 @@ export const useAppStore = create<AppState>()(
                     set(state => ({ processes: [...state.processes, newProcess] }));
                 } catch (e: any) {
                     set({ error: e.message });
+                }
+            },
+            updateProcess: async (id, updates) => {
+                try {
+                    await storage.updateProcess(id, updates);
+                    set(state => ({
+                        processes: state.processes.map(p => p.id === id ? { ...p, ...updates } : p)
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                }
+            },
+            deleteProcess: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.deleteProcess(id);
+                    set((state) => ({
+                        processes: state.processes.filter((p) => p.id !== id),
+                    }));
+                    toast.success("Process deleted successfully");
+                } catch (e: any) {
+                    console.error("Store: Delete process failed", e);
+                    toast.error(e.message || "Failed to delete process");
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
                 }
             },
 
@@ -708,17 +947,49 @@ export const useAppStore = create<AppState>()(
             },
 
             // --- Material Types ---
-            fetchMaterialTypes: async () => {
+            fetchMaterialTypes: async (includeArchived = false) => {
                 set({ isLoading: true });
                 try {
-                    const materialTypes = await storage.getMaterialTypes();
-                    if (materialTypes.length === 0) {
-                        set({ materialTypes: ["Prepreg", "Fabric", "Resin", "Core", "Adhesive"] });
-                    } else {
-                        set({ materialTypes });
-                    }
-                } catch (e) {
-                    set({ materialTypes: ["Prepreg", "Fabric", "Resin", "Core", "Adhesive"] });
+                    const materialTypes = await storage.getMaterialTypes(includeArchived);
+                    set({ materialTypes });
+                } catch (e: any) {
+                    // Fallback removed, rely on storage
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            archiveMaterialType: async (type) => {
+                set({ isLoading: true });
+                try {
+                    console.log("Store: Archiving material type", type);
+                    await storage.archiveMaterialType(type);
+                    set(state => ({
+                        materialTypes: state.materialTypes.map(t =>
+                            t.name === type ? { ...t, entryStatus: 'archived' } : t
+                        )
+                    }));
+                    console.log("Store: Archive material type success", type);
+                    toast.success("Material type archived successfully");
+                } catch (e: any) {
+                    console.error("Store: Archive material type failed", e);
+                    toast.error(e.message || "Failed to archive material type");
+                    set({ error: e.message || "Failed to archive material type" });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            restoreMaterialType: async (type) => {
+                set({ isLoading: true });
+                try {
+                    await storage.restoreMaterialType(type);
+                    set(state => ({
+                        materialTypes: state.materialTypes.map(t =>
+                            t.name === type ? { ...t, entryStatus: 'active' } : t
+                        )
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
                 } finally {
                     set({ isLoading: false });
                 }
@@ -726,10 +997,10 @@ export const useAppStore = create<AppState>()(
             addMaterialType: async (type) => {
                 set({ isLoading: true });
                 try {
-                    set(state => ({ materialTypes: [...state.materialTypes, type] }));
-                    await storage.createMaterialType(type);
+                    const newType = await storage.createMaterialType(type);
+                    set(state => ({ materialTypes: [...state.materialTypes, newType] }));
                 } catch (e: any) {
-                    console.warn("Error adding material type", e);
+                    set({ error: e.message });
                 } finally {
                     set({ isLoading: false });
                 }
@@ -737,10 +1008,10 @@ export const useAppStore = create<AppState>()(
             deleteMaterialType: async (type) => {
                 set({ isLoading: true });
                 try {
-                    set(state => ({ materialTypes: state.materialTypes.filter(t => t !== type) }));
                     await storage.deleteMaterialType(type);
+                    set(state => ({ materialTypes: state.materialTypes.filter(t => t.name !== type) }));
                 } catch (e: any) {
-                    console.warn("Error deleting material type", e);
+                    set({ error: e.message });
                 } finally {
                     set({ isLoading: false });
                 }
@@ -754,6 +1025,20 @@ export const useAppStore = create<AppState>()(
                     set({ specifications });
                 } catch (e: any) {
                     console.warn("Fetch Specifications failed:", e);
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            fetchSpecificationsForEntities: async (entities) => {
+                set({ isLoading: true });
+                try {
+                    const promises = entities.map(e => storage.getSpecifications(e.id, e.type));
+                    const results = await Promise.all(promises);
+                    const specifications = results.flat();
+                    set({ specifications });
+                } catch (e: any) {
+                    console.warn("Fetch Specifications for entities failed:", e);
                 } finally {
                     set({ isLoading: false });
                 }
@@ -1003,6 +1288,184 @@ export const useAppStore = create<AppState>()(
                     await storage.deleteStandardPart(id);
                 } catch (e: any) {
                     set({ error: e.message, standardParts: previousParts }); // Revert
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // --- Projects ---
+            fetchProjects: async () => {
+                set({ isLoading: true });
+                try {
+                    const projects = await storage.getProjects();
+                    set({ projects });
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            addProject: async (project) => {
+                set({ isLoading: true });
+                try {
+                    const newProject = await storage.createProject(project);
+                    set(state => ({ projects: [newProject, ...state.projects] }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateProject: async (id, updates) => {
+                set({ isLoading: true });
+                try {
+                    await storage.updateProject(id, updates);
+                    set(state => ({
+                        projects: state.projects.map(p => p.id === id ? { ...p, ...updates } : p),
+                        currentProject: state.currentProject?.id === id ? { ...state.currentProject, ...updates } : state.currentProject
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteProject: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.deleteProject(id);
+                    set(state => ({
+                        projects: state.projects.filter(p => p.id !== id),
+                        currentProject: state.currentProject?.id === id ? null : state.currentProject
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            setCurrentProject: (project) => {
+                set({ currentProject: project });
+                // If clearing project, also clear lists
+                if (!project) {
+                    set({ currentProjectLists: { materialLists: [], processLists: [] } });
+                }
+            },
+            fetchProjectLists: async (projectId) => {
+                set({ isLoading: true });
+                try {
+                    const lists = await storage.getProjectLists(projectId);
+                    set({ currentProjectLists: lists });
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // --- Lists ---
+            createMaterialList: async (list) => {
+                set({ isLoading: true });
+                try {
+                    const newList = await storage.createMaterialList(list);
+                    set(state => ({
+                        currentProjectLists: {
+                            ...state.currentProjectLists,
+                            materialLists: [...state.currentProjectLists.materialLists, newList]
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateMaterialList: async (id, updates) => {
+                set({ isLoading: true });
+                try {
+                    await storage.updateMaterialList(id, updates);
+                    set(state => ({
+                        currentProjectLists: {
+                            ...state.currentProjectLists,
+                            materialLists: state.currentProjectLists.materialLists.map(l => l.id === id ? { ...l, ...updates } : l)
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteMaterialList: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.deleteMaterialList(id);
+                    set(state => ({
+                        currentProjectLists: {
+                            ...state.currentProjectLists,
+                            materialLists: state.currentProjectLists.materialLists.filter(l => l.id !== id)
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            createProcessList: async (list) => {
+                set({ isLoading: true });
+                try {
+                    const newList = await storage.createProcessList(list);
+                    set(state => ({
+                        currentProjectLists: {
+                            ...state.currentProjectLists,
+                            processLists: [...state.currentProjectLists.processLists, newList]
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateProcessList: async (id, updates) => {
+                set({ isLoading: true });
+                try {
+                    await storage.updateProcessList(id, updates);
+                    set(state => ({
+                        currentProjectLists: {
+                            ...state.currentProjectLists,
+                            processLists: state.currentProjectLists.processLists.map(l => l.id === id ? { ...l, ...updates } : l)
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteProcessList: async (id) => {
+                set({ isLoading: true });
+                try {
+                    await storage.deleteProcessList(id);
+                    set(state => ({
+                        currentProjectLists: {
+                            ...state.currentProjectLists,
+                            processLists: state.currentProjectLists.processLists.filter(l => l.id !== id)
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
                     throw e;
                 } finally {
                     set({ isLoading: false });

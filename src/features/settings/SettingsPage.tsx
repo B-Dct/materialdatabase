@@ -4,7 +4,6 @@ import { MaterialTypeManager } from "./MaterialTypeManager";
 import { ProcessManager } from "./ProcessManager";
 import { LaboratoryManager } from "./LaboratoryManager";
 import { PropertyRegistry } from "@/features/quality/PropertyRegistry";
-import { TestMethodsView } from "@/features/quality/TestMethodsView";
 
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
@@ -50,10 +49,10 @@ export function SettingsPage() {
                 </div>
             )}
 
-            <Tabs defaultValue="methods" className="space-y-4">
+            <Tabs defaultValue="types" className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="types">Material Types</TabsTrigger>
-                    <TabsTrigger value="methods">Test Methods</TabsTrigger>
+                    {/* <TabsTrigger value="methods">Test Methods</TabsTrigger> Moved to Master Data */}
                     <TabsTrigger value="processes">Processes</TabsTrigger>
                     <TabsTrigger value="labs">Laboratories</TabsTrigger>
                     <TabsTrigger value="properties_legacy">Properties</TabsTrigger>
@@ -61,10 +60,6 @@ export function SettingsPage() {
 
                 <TabsContent value="types" className="space-y-4">
                     <MaterialTypeManager />
-                </TabsContent>
-
-                <TabsContent value="methods" className="space-y-4">
-                    <TestMethodsView />
                 </TabsContent>
 
                 <TabsContent value="processes" className="space-y-4">

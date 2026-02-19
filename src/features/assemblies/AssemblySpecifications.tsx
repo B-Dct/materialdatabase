@@ -87,6 +87,7 @@ export function AssemblySpecifications({ assembly }: AssemblySpecificationsProps
     }, [assembly?.id, fetchSpecifications]);
 
     const assemblySpecs = specifications.filter(s => s.assemblyId === assembly.id);
+    const validProperties = Array.isArray(assembly.properties) ? assembly.properties : [];
 
     const toggleSpecExpansion = (specId: string) => {
         const newSet = new Set(expandedSpecs);
@@ -134,7 +135,8 @@ export function AssemblySpecifications({ assembly }: AssemblySpecificationsProps
     };
 
     const handleDeleteProperty = async (propId: string) => {
-        const updatedProperties = (assembly.properties || []).filter(p => p.id !== propId);
+        const currentProps = Array.isArray(assembly.properties) ? assembly.properties : [];
+        const updatedProperties = currentProps.filter(p => p.id !== propId);
         await updateAssembly(assembly.id, { properties: updatedProperties });
     };
 
@@ -176,7 +178,8 @@ export function AssemblySpecifications({ assembly }: AssemblySpecificationsProps
             vMean: newInlineProp.vMean
         };
 
-        const updatedProperties = [...(assembly.properties || []), property];
+        const currentProps = Array.isArray(assembly.properties) ? assembly.properties : [];
+        const updatedProperties = [...currentProps, property];
 
         try {
             await updateAssembly(assembly.id, { properties: updatedProperties });
@@ -314,7 +317,7 @@ export function AssemblySpecifications({ assembly }: AssemblySpecificationsProps
                             ) : (
                                 assemblySpecs.map((spec) => {
                                     const isExpanded = expandedSpecs.has(spec.id);
-                                    const specProperties = (assembly.properties || []).filter(p => p.specificationId === spec.id);
+                                    const specProperties = validProperties.filter(p => p.specificationId === spec.id);
                                     const isAdding = addingToSpecId === spec.id;
 
                                     return (

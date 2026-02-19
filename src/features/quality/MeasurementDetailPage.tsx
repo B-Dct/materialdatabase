@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth"; // Import auth hook
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, FileText, Pencil } from "lucide-react";
+import { ChevronLeft, FileText, Pencil, Trash2, Paperclip } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from "recharts";
 import {
@@ -14,14 +15,18 @@ import {
     DialogHeader,
     DialogTitle,
     DialogTrigger,
+    DialogFooter,
+    DialogDescription
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 export function MeasurementDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { user } = useAuth(); // Get user for role check
     const {
         measurements,
         fetchMeasurements,
@@ -35,15 +40,19 @@ export function MeasurementDetailPage() {
         fetchLayups,
         assemblies,
         fetchAssemblies,
-        updateMeasurement
+        updateMeasurement,
+        deleteMeasurement // Assuming this is available in store now
     } = useAppStore();
 
     const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [editForm, setEditForm] = useState({
         orderNumber: "",
         referenceNumber: "",
         parentType: "material", // material | layup | assembly
-        parentId: ""
+        parentId: "",
+        comment: "",
+        isActive: true
     });
 
     useEffect(() => {
@@ -79,7 +88,9 @@ export function MeasurementDetailPage() {
             orderNumber: measurement.orderNumber,
             referenceNumber: measurement.referenceNumber || "",
             parentType: measurement.layupId ? "layup" : measurement.assemblyId ? "assembly" : "material",
-            parentId: measurement.layupId || measurement.assemblyId || measurement.materialId || ""
+            parentId: measurement.layupId || measurement.assemblyId || measurement.materialId || "",
+            comment: measurement.comment || "",
+            isActive: measurement.isActive !== false // Default true
         });
         setIsEditOpen(true);
     };
@@ -88,6 +99,8 @@ export function MeasurementDetailPage() {
         await updateMeasurement(measurement.id, {
             orderNumber: editForm.orderNumber,
             referenceNumber: editForm.referenceNumber,
+            comment: editForm.comment,
+            isActive: editForm.isActive,
             // Clear current links
             materialId: null as any,
             layupId: null as any,
@@ -101,6 +114,17 @@ export function MeasurementDetailPage() {
         fetchMeasurements(); // Refresh
     };
 
+    const handleDelete = async () => {
+        if (deleteMeasurement) {
+            await deleteMeasurement(measurement.id);
+            navigate(-1); // Go back after delete
+        } else {
+            console.error("deleteMeasurement not implemented in store");
+        }
+    };
+
+    const isActive = measurement.isActive !== false;
+
     return (
         <div className="container mx-auto py-6 space-y-6 max-w-5xl">
             {/* Header */}
@@ -110,7 +134,10 @@ export function MeasurementDetailPage() {
                 </Button>
                 <div className="flex-1">
                     <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-bold tracking-tight">Measurement Report</h1>
+                        <h1 className={`text-2xl font-bold tracking-tight ${!isActive ? "text-muted-foreground line-through decoration-slate-400" : ""}`}>
+                            Measurement Report
+                        </h1>
+                        {!isActive && <Badge variant="destructive">INACTIVE</Badge>}
                         <Badge variant="outline" className="text-base font-normal px-2 py-0.5">
                             {measurement.orderNumber || "No Order #"}
                         </Badge>
@@ -128,62 +155,106 @@ export function MeasurementDetailPage() {
                     </div>
                 </div>
 
-                <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-                    <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" onClick={handleEditClick}>
-                            <Pencil className="mr-2 h-4 w-4" /> Edit Metadata
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Edit Measurement Details</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Order Number</Label>
-                                    <Input value={editForm.orderNumber} onChange={e => setEditForm({ ...editForm, orderNumber: e.target.value })} />
+                <div className="flex items-center gap-2">
+                    {/* Delete (Admin Only) */}
+                    {user?.role === 'admin' && (
+                        <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                            <DialogTrigger asChild>
+                                <Button variant="destructive" size="sm">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Confirm Deletion</DialogTitle>
+                                    <DialogDescription>
+                                        Are you sure you want to delete this measurement? This action cannot be undone.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter>
+                                    <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>Cancel</Button>
+                                    <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    )}
+
+                    {/* Edit */}
+                    <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" onClick={handleEditClick}>
+                                <Pencil className="mr-2 h-4 w-4" /> Edit Metadata
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[500px]">
+                            <DialogHeader>
+                                <DialogTitle>Edit Measurement Details</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Order Number</Label>
+                                        <Input value={editForm.orderNumber} onChange={e => setEditForm({ ...editForm, orderNumber: e.target.value })} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Reference Number</Label>
+                                        <Input value={editForm.referenceNumber} onChange={e => setEditForm({ ...editForm, referenceNumber: e.target.value })} />
+                                    </div>
                                 </div>
+
                                 <div className="space-y-2">
-                                    <Label>Reference Number</Label>
-                                    <Input value={editForm.referenceNumber} onChange={e => setEditForm({ ...editForm, referenceNumber: e.target.value })} />
+                                    <Label>Comments</Label>
+                                    <Textarea value={editForm.comment} onChange={e => setEditForm({ ...editForm, comment: e.target.value })} />
                                 </div>
-                            </div>
 
-                            <div className="space-y-2">
-                                <Label>Parent Entity Type</Label>
-                                <Select
-                                    value={editForm.parentType}
-                                    onValueChange={(v) => setEditForm({ ...editForm, parentType: v, parentId: "" })}
-                                >
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="material">Material</SelectItem>
-                                        <SelectItem value="layup">Layup</SelectItem>
-                                        <SelectItem value="assembly">Assembly</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                                <div className="flex items-center gap-2">
+                                    <Label>Appears Active?</Label>
+                                    <Input
+                                        type="checkbox"
+                                        className="h-4 w-4"
+                                        checked={editForm.isActive}
+                                        onChange={e => setEditForm({ ...editForm, isActive: e.target.checked })}
+                                    />
+                                    <span className="text-xs text-muted-foreground">Uncheck to mark as invalid/hidden from main views.</span>
+                                </div>
 
-                            <div className="space-y-2">
-                                <Label>Select {editForm.parentType === 'material' ? 'Material' : editForm.parentType === 'layup' ? 'Layup' : 'Assembly'}</Label>
-                                <Select
-                                    value={editForm.parentId}
-                                    onValueChange={(v) => setEditForm({ ...editForm, parentId: v })}
-                                >
-                                    <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-                                    <SelectContent>
-                                        {(editForm.parentType === 'material' ? materials : editForm.parentType === 'layup' ? layups : assemblies).map(item => (
-                                            <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                                <Separator />
 
-                            <Button className="w-full" onClick={handleSaveEdit}>Save Changes</Button>
-                        </div>
-                    </DialogContent>
-                </Dialog>
+                                <div className="space-y-2">
+                                    <Label>Parent Entity Type</Label>
+                                    <Select
+                                        value={editForm.parentType}
+                                        onValueChange={(v) => setEditForm({ ...editForm, parentType: v, parentId: "" })}
+                                    >
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="material">Material</SelectItem>
+                                            <SelectItem value="layup">Layup</SelectItem>
+                                            <SelectItem value="assembly">Assembly</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Select {editForm.parentType === 'material' ? 'Material' : editForm.parentType === 'layup' ? 'Layup' : 'Assembly'}</Label>
+                                    <Select
+                                        value={editForm.parentId}
+                                        onValueChange={(v) => setEditForm({ ...editForm, parentId: v })}
+                                    >
+                                        <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                                        <SelectContent>
+                                            {(editForm.parentType === 'material' ? materials : editForm.parentType === 'layup' ? layups : assemblies).map(item => (
+                                                <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <Button className="w-full" onClick={handleSaveEdit}>Save Changes</Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -242,40 +313,88 @@ export function MeasurementDetailPage() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Comments Display */}
+                        {measurement.comment && (
+                            <div className="mt-8">
+                                <h4 className="text-sm font-semibold mb-2">Comments</h4>
+                                <div className="bg-muted/30 p-4 rounded-md text-sm border">
+                                    {measurement.comment}
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
-                {/* Metadata Card */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Metadata</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div>
-                            <div className="text-sm font-medium text-muted-foreground">Test Method</div>
-                            <div>{measurement.testMethod || "-"}</div>
-                        </div>
-                        <Separator />
-                        <div>
-                            <div className="text-sm font-medium text-muted-foreground">Source</div>
-                            {measurement.sourceType === 'pdf' ? (
-                                <div className="flex items-center gap-2 text-blue-600 mt-1">
-                                    <FileText className="h-4 w-4" />
-                                    <span className="underline truncate max-w-[200px]" title={measurement.sourceFilename}>
-                                        {measurement.sourceFilename || "Report.pdf"}
-                                    </span>
+                {/* Metadata & Attachments Card */}
+                <div className="space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Metadata</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div>
+                                <div className="text-sm font-medium text-muted-foreground">Test Method</div>
+                                <div>{measurement.testMethod || "-"}</div>
+                            </div>
+                            <Separator />
+                            <div>
+                                <div className="text-sm font-medium text-muted-foreground">Sample Count (n)</div>
+                                <div>{measurement.statistics?.n || measurement.values.length}</div>
+                            </div>
+                            <Separator />
+                            <div>
+                                <div className="text-sm font-medium text-muted-foreground">Source Type</div>
+                                <div className="capitalize">{measurement.sourceType}</div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Attachments</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {/* Primary Source Reference (if legacy/migrated) */}
+                            {measurement.sourceType === 'pdf' && !measurement.attachments?.length && (
+                                <div className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 transition-colors border">
+                                    <FileText className="h-4 w-4 text-blue-500" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium truncate" title={measurement.sourceFilename}>
+                                            {measurement.sourceFilename || "Legacy Report.pdf"}
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground">Test Report</div>
+                                    </div>
+                                    {measurement.sourceRef && (
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => window.open(measurement.sourceRef, '_blank')}>
+                                            <Paperclip className="h-3 w-3" />
+                                        </Button>
+                                    )}
                                 </div>
-                            ) : (
-                                <div className="mt-1">Manual Entry</div>
                             )}
-                        </div>
-                        <Separator />
-                        <div>
-                            <div className="text-sm font-medium text-muted-foreground">Sample Count (n)</div>
-                            <div>{measurement.statistics?.n || measurement.values.length}</div>
-                        </div>
-                    </CardContent>
-                </Card>
+
+                            {/* New Attachments Array */}
+                            {measurement.attachments?.map((att, idx) => (
+                                <div key={idx} className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 transition-colors border">
+                                    <FileText className="h-4 w-4 text-primary" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium truncate" title={att.name}>
+                                            {att.name}
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground">{att.category}</div>
+                                    </div>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => window.open(att.url, '_blank')}>
+                                        <Paperclip className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            ))}
+
+                            {(!measurement.attachments?.length && measurement.sourceType !== 'pdf') && (
+                                <div className="text-sm text-muted-foreground italic">No files attached.</div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
 
             {/* Detailed Values Table & Chart */}
@@ -347,4 +466,3 @@ export function MeasurementDetailPage() {
         </div>
     );
 }
-

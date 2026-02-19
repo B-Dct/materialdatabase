@@ -73,7 +73,8 @@ export function AssemblyPropertyManagerDialog({ open, onOpenChange, assembly, in
             vMean: newProp.vMean
         };
 
-        const updatedProperties = [...(assembly.properties || []), property];
+        const currentProps = Array.isArray(assembly.properties) ? assembly.properties : [];
+        const updatedProperties = [...currentProps, property];
 
         updateAssembly(assembly.id, { properties: updatedProperties });
 
@@ -91,7 +92,8 @@ export function AssemblyPropertyManagerDialog({ open, onOpenChange, assembly, in
     };
 
     const handleDelete = (id: string) => {
-        const updatedProperties = (assembly.properties || []).filter(p => p.id !== id);
+        const currentProps = Array.isArray(assembly.properties) ? assembly.properties : [];
+        const updatedProperties = currentProps.filter(p => p.id !== id);
         updateAssembly(assembly.id, { properties: updatedProperties });
     };
 
@@ -264,12 +266,12 @@ export function AssemblyPropertyManagerDialog({ open, onOpenChange, assembly, in
                     {/* Existing Properties List */}
                     <div className="space-y-2">
                         <h4 className="font-medium text-sm">Defined Properties</h4>
-                        {(!assembly.properties || assembly.properties.length === 0) && (
+                        {(!Array.isArray(assembly.properties) || assembly.properties.length === 0) && (
                             <div className="text-sm text-muted-foreground italic text-center py-4">
                                 No properties defined yet.
                             </div>
                         )}
-                        {assembly.properties?.map(prop => (
+                        {(Array.isArray(assembly.properties) ? assembly.properties : []).map(prop => (
                             <div key={prop.id} className="flex items-center justify-between p-3 border rounded-md bg-white">
                                 <div className="grid grid-cols-4 gap-4 flex-1">
                                     <div className="flex flex-col">

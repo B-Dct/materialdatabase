@@ -43,13 +43,14 @@ export function CreateMaterialPage() {
         setError(null);
 
         // Validation: Check for duplicates
-        const duplicateId = materials.find(m => m.materialId.toLowerCase() === formData.materialId?.toLowerCase());
+        // Use safe access (|| "") to handle potential missing data in existing records
+        const duplicateId = materials.find(m => (m.materialId || "").toLowerCase() === (formData.materialId || "").toLowerCase());
         if (duplicateId) {
             setError(`Material ID '${formData.materialId}' already exists.`);
             return;
         }
 
-        const duplicateName = materials.find(m => m.name.toLowerCase() === formData.name?.toLowerCase());
+        const duplicateName = materials.find(m => (m.name || "").toLowerCase() === (formData.name || "").toLowerCase());
         if (duplicateName) {
             setError(`Material Name '${formData.name}' already exists.`);
             return;
@@ -57,7 +58,7 @@ export function CreateMaterialPage() {
 
         if (formData.materialListNumber) {
             const listNum = formData.materialListNumber;
-            const duplicateList = materials.find(m => m.materialListNumber?.toLowerCase() === listNum.toLowerCase());
+            const duplicateList = materials.find(m => (m.materialListNumber || "").toLowerCase() === listNum.toLowerCase());
             if (duplicateList) {
                 setError(`List Number '${formData.materialListNumber}' already exists.`);
                 return;
@@ -154,9 +155,11 @@ export function CreateMaterialPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             {materialTypes.length === 0 ? (
-                                                <SelectItem value="none" disabled>No types defined</SelectItem>
+                                                <SelectItem value="none" disabled>No types available</SelectItem>
                                             ) : (
-                                                materialTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
+                                                materialTypes
+                                                    .filter(t => t.entryStatus !== 'archived')
+                                                    .map(t => <SelectItem key={t.name} value={t.name}>{t.name}</SelectItem>)
                                             )}
                                         </SelectContent>
                                     </Select>

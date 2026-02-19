@@ -73,7 +73,8 @@ export function LayupPropertyManagerDialog({ open, onOpenChange, layup, initialS
             vMean: newProp.vMean
         };
 
-        const updatedProperties = [...(layup.properties || []), property];
+        const currentProps = Array.isArray(layup.properties) ? layup.properties : [];
+        const updatedProperties = [...currentProps, property];
 
         updateLayup(layup.id, { properties: updatedProperties });
 
@@ -91,7 +92,8 @@ export function LayupPropertyManagerDialog({ open, onOpenChange, layup, initialS
     };
 
     const handleDelete = (id: string) => {
-        const updatedProperties = (layup.properties || []).filter(p => p.id !== id);
+        const currentProps = Array.isArray(layup.properties) ? layup.properties : [];
+        const updatedProperties = currentProps.filter(p => p.id !== id);
         updateLayup(layup.id, { properties: updatedProperties });
     };
 
@@ -264,12 +266,12 @@ export function LayupPropertyManagerDialog({ open, onOpenChange, layup, initialS
                     {/* Existing Properties List */}
                     <div className="space-y-2">
                         <h4 className="font-medium text-sm">Defined Properties</h4>
-                        {(!layup.properties || layup.properties.length === 0) && (
+                        {(!Array.isArray(layup.properties) || layup.properties.length === 0) && (
                             <div className="text-sm text-muted-foreground italic text-center py-4">
                                 No properties defined yet.
                             </div>
                         )}
-                        {layup.properties?.map(prop => (
+                        {(Array.isArray(layup.properties) ? layup.properties : []).map(prop => (
                             <div key={prop.id} className="flex items-center justify-between p-3 border rounded-md bg-white">
                                 <div className="grid grid-cols-4 gap-4 flex-1">
                                     <div className="flex flex-col">

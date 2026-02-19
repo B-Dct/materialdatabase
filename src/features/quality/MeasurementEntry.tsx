@@ -1,17 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 import { DataTable } from '@/components/ui/data-table';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Plus, MessageSquare, Power, ArrowUpDown, FileText } from 'lucide-react';
+import { Plus, MessageSquare, Power, ArrowUpDown, FileText, Paperclip, Trash2 } from 'lucide-react';
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format } from 'date-fns';
 
 interface MeasurementEntryProps {
@@ -24,9 +35,14 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
         properties,
         measurements,
         fetchMeasurements,
-        updateMeasurement
+        updateMeasurement,
+        deleteMeasurement
     } = useAppStore();
+    const { user } = useAuth();
     const navigate = useNavigate();
+
+    // Local state for delete dialog
+    const [measurementToDelete, setMeasurementToDelete] = useState<string | null>(null);
 
     useEffect(() => {
         fetchMeasurements();
@@ -58,6 +74,13 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
         await updateMeasurement(id, { isActive: !currentState });
     };
 
+    const confirmDelete = async () => {
+        if (measurementToDelete) {
+            await deleteMeasurement(measurementToDelete);
+            setMeasurementToDelete(null);
+        }
+    };
+
     const columns: ColumnDef<any>[] = [
         {
             accessorKey: "date",
@@ -85,12 +108,12 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="text-primary/70">
+                                    <div className="text-primary/70 cursor-help">
                                         <MessageSquare className="h-3 w-3" />
                                     </div>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                    <p>{row.original.comment}</p>
+                                    <p className="max-w-xs text-xs">{row.original.comment}</p>
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
@@ -148,41 +171,82 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
             header: "Method",
             cell: ({ row }) => row.getValue("testMethod") || "-",
         },
+        // Source / Attachments
         {
-            accessorKey: "laboratoryId",
-            header: "Lab",
-            cell: ({ row }) => row.getValue("laboratoryId"),
-        },
-        {
-            accessorKey: "sourceType", // For filtering
-            header: "Source",
+            id: "attachments",
+            header: "Files",
             cell: ({ row }) => {
                 const m = row.original;
-                return m.sourceType === "pdf" ? (
-                    <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
-                        <FileText className="h-4 w-4" />
-                        <span className="truncate max-w-[100px]">{m.sourceFilename || "Report.pdf"}</span>
+                const hasPdf = m.sourceType === "pdf";
+                const hasAttachments = m.attachments && m.attachments.length > 0;
+
+                if (!hasPdf && !hasAttachments) return <span className="text-muted-foreground text-xs">-</span>;
+
+                return (
+                    <div className="flex items-center gap-2">
+                        {hasPdf && (
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <FileText className="h-4 w-4 text-blue-500" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Source PDF: {m.sourceFilename || "Report.pdf"}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        )}
+                        {hasAttachments && (
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center text-muted-foreground">
+                                            <Paperclip className="h-4 w-4" />
+                                            <span className="text-xs ml-0.5">{m.attachments.length}</span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>{m.attachments.length} attachment(s)</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        )}
                     </div>
-                ) : (
-                    <span className="text-muted-foreground text-xs">Manual Entry</span>
                 );
             }
         },
         {
-            accessorKey: "_isActive",
-            header: "Status",
+            id: "actions",
+            header: "Actions",
             cell: ({ row }) => {
                 const isActive = row.original._isActive;
                 return (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className={`h-6 w-6 p-0 rounded-full ${isActive ? "text-green-600 hover:text-green-700 hover:bg-green-100" : "text-muted-foreground hover:text-foreground"}`}
-                        onClick={(e) => toggleActive(e, row.original.id, !!isActive)}
-                        title={isActive ? "Deactivate Measurement" : "Activate Measurement"}
-                    >
-                        <Power className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-8 w-8 p-0 rounded-full ${isActive ? "text-green-600 hover:bg-green-100" : "text-gray-400 hover:text-green-600"}`}
+                            onClick={(e) => toggleActive(e, row.original.id, !!isActive)}
+                            title={isActive ? "Deactivate" : "Activate"}
+                        >
+                            <Power className="h-4 w-4" />
+                        </Button>
+
+                        {user?.role === 'admin' && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMeasurementToDelete(row.original.id);
+                                }}
+                                title="Delete Measurement"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        )}
+                    </div>
                 );
             },
         },
@@ -205,12 +269,6 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
         }));
     }, [data]);
 
-    const filteredData = useMemo(() => {
-        if (!globalFilter) return searchableData;
-        const lowerFilter = globalFilter.toLowerCase();
-        return searchableData.filter(item => item._searchString.includes(lowerFilter));
-    }, [searchableData, globalFilter]);
-
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -227,21 +285,38 @@ export function MeasurementEntry({ parentId, parentType }: MeasurementEntryProps
                 <CardHeader>
                     <CardTitle>Recorded Data</CardTitle>
                     <CardDescription>
-                        {filteredData.filter(m => m._isActive).length} active measurements found.
+                        {data.filter(m => m._isActive).length} active measurements found.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <DataTable
                         columns={columns}
-                        data={filteredData}
+                        data={searchableData}
                         enableGlobalFilter={true}
                         globalFilter={globalFilter}
                         onGlobalFilterChange={setGlobalFilter}
                         filterPlaceholder="Search internal records..."
+
                         onRowClick={(row) => navigate(`/measurements/${row.id}`)}
+                        getRowClassName={(row) => !row._isActive ? "opacity-60 bg-muted/40 data-[state=selected]:bg-muted grayscale-[0.8]" : ""}
                     />
                 </CardContent>
             </Card>
+
+            <AlertDialog open={!!measurementToDelete} onOpenChange={() => setMeasurementToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the measurement result.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

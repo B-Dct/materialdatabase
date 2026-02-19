@@ -88,6 +88,7 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
     }, [layup?.id, fetchSpecifications]);
 
     const layupSpecs = specifications.filter(s => s.layupId === layup.id);
+    const validProperties = Array.isArray(layup.properties) ? layup.properties : [];
 
     const toggleSpecExpansion = (specId: string) => {
         const newSet = new Set(expandedSpecs);
@@ -135,7 +136,8 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
     };
 
     const handleDeleteProperty = async (propId: string) => {
-        const updatedProperties = (layup.properties || []).filter(p => p.id !== propId);
+        const currentProps = Array.isArray(layup.properties) ? layup.properties : [];
+        const updatedProperties = currentProps.filter(p => p.id !== propId);
         await updateLayup(layup.id, { properties: updatedProperties });
     };
 
@@ -177,7 +179,8 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
             vMean: newInlineProp.vMean
         };
 
-        const updatedProperties = [...(layup.properties || []), property];
+        const currentProps = Array.isArray(layup.properties) ? layup.properties : [];
+        const updatedProperties = [...currentProps, property];
 
         try {
             await updateLayup(layup.id, { properties: updatedProperties });
@@ -315,7 +318,7 @@ export function LayupSpecifications({ layup }: LayupSpecificationsProps) {
                             ) : (
                                 layupSpecs.map((spec) => {
                                     const isExpanded = expandedSpecs.has(spec.id);
-                                    const specProperties = (layup.properties || []).filter(p => p.specificationId === spec.id);
+                                    const specProperties = validProperties.filter(p => p.specificationId === spec.id);
                                     const isAdding = addingToSpecId === spec.id;
 
                                     return (

@@ -15,21 +15,25 @@ import { AssemblyDetailPage } from '@/features/assemblies/AssemblyDetailPage';
 import { CreateAssemblyPage } from '@/features/assemblies/CreateAssemblyPage';
 import { DataImportPage } from '@/features/imports/DataImportPage';
 import { RequirementProfileListPage } from '@/features/quality/RequirementProfileListPage';
-import { RequirementProfileDetailPage } from '@/features/quality/RequirementProfileDetailPage';
+
 import { MeasurementsPage } from '@/features/quality/MeasurementsPage';
 import { AnalysisDashboard } from '@/features/analysis/AnalysisDashboard';
 
 import { CorrelationView } from '@/features/analysis/CorrelationView';
 import { SettingsPage } from '@/features/settings/SettingsPage';
+import { TestMethodsView } from '@/features/quality/TestMethodsView';
+import { StandardDetailPage } from '@/features/quality/StandardDetailPage';
 import StandardPartsPage from '@/features/parts/StandardPartsPage';
 import { AuthProvider } from '@/lib/auth';
 import { Protect } from '@/components/auth/Protect';
+import { Toaster } from 'sonner';
 
 const NotFound = () => <div className="p-8 text-center text-red-500">404: Page Not Found</div>;
 
 function App() {
   return (
     <AuthProvider>
+      <Toaster position="top-right" richColors />
       <Router basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/" element={<MainLayout />}>
@@ -46,10 +50,12 @@ function App() {
             <Route path="parts" element={<StandardPartsPage />} />
 
             <Route path="standards" element={<RequirementProfileListPage />} />
-            <Route path="standards/:id" element={<RequirementProfileDetailPage />} />
+            <Route path="standards/new" element={<StandardDetailPage />} />
+            <Route path="standards/:id" element={<StandardDetailPage />} />
 
             <Route path="quality/measurements" element={<MeasurementsPage />} />
             <Route path="quality/test-run" element={<CreateTestRunPage />} />
+            <Route path="quality/test-methods" element={<TestMethodsView />} /> {/* Added route */}
             <Route path="measurements/new" element={<CreateTestRunPage />} />
             <Route path="measurements/:id" element={<MeasurementDetailPage />} />
             <Route path="quality/analysis" element={<AnalysisDashboard />} />

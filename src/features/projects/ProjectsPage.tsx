@@ -1,0 +1,124 @@
+import React, { useState, useEffect } from 'react';
+import { useAppStore } from '@/lib/store';
+import { Button } from '@/components/ui/button';
+import { Plus, Search, Eye, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { Link } from 'react-router-dom';
+import { CreateProjectDialog } from './CreateProjectDialog';
+
+export const ProjectsPage = () => {
+    const { projects, fetchProjects, deleteProject } = useAppStore();
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+    useEffect(() => {
+        fetchProjects();
+    }, [fetchProjects]);
+
+    const filteredProjects = projects.filter(p =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.projectNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const handleDelete = async (id: string) => {
+        if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+            await deleteProject(id);
+        }
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
+                    <p className="text-muted-foreground mt-2">Manage your engineering projects and create material/process lists.</p>
+                </div>
+                <Button onClick={() => setIsCreateOpen(true)} size="lg">
+                    <Plus className="mr-2 h-4 w-4" /> Create Project
+                </Button>
+            </div>
+
+            <div className="flex items-center space-x-2">
+                <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search projects..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-8"
+                    />
+                </div>
+            </div>
+
+            <div className="rounded-md border bg-card">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Number</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Revision</TableHead>
+                            <TableHead>Created</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {filteredProjects.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                                    No projects found. Create one to get started.
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            filteredProjects.map((project) => (
+                                <TableRow key={project.id}>
+                                    <TableCell className="font-medium">{project.projectNumber}</TableCell>
+                                    <TableCell>{project.name}</TableCell>
+                                    <TableCell>
+                                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${project.status === 'Active' ? 'bg-green-100 text-green-800' :
+                                                project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
+                                                    project.status === 'On Hold' ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-gray-100 text-gray-800'
+                                            }`}>
+                                            {project.status}
+                                        </span>
+                                    </TableCell>
+                                    <TableCell>{project.revision}</TableCell>
+                                    <TableCell>{new Date(project.createdAt || '').toLocaleDateString()}</TableCell>
+                                    <TableCell className="text-right">
+                                        <div className="flex justify-end gap-2">
+                                            <Link to={`/projects/${project.id}`}>
+                                                <Button variant="ghost" size="icon" title="View Project">
+                                                    <Eye className="h-4 w-4" />
+                                                </Button>
+                                            </Link>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => handleDelete(project.id)}
+                                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                title="Delete Project"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+
+            <CreateProjectDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
+        </div>
+    );
+};

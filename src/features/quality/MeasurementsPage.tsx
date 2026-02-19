@@ -138,6 +138,44 @@ export function MeasurementsPage() {
             ),
         },
         {
+            id: "comment",
+            header: "Note",
+            cell: ({ row }) => {
+                const comment = row.original.comment;
+                return comment ? (
+                    <div className="flex items-center justify-center w-8" title={comment}>
+                        <div className="relative group">
+                            <span className="cursor-help text-muted-foreground hover:text-foreground">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-message-square"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                            </span>
+                        </div>
+                    </div>
+                ) : null;
+            },
+        },
+        {
+            id: "attachments",
+            header: "File",
+            cell: ({ row }) => {
+                const attachments = row.original.attachments;
+                const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+                return hasAttachments ? (
+                    <div className="flex items-center justify-center w-8">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" title={`${attachments.length} attachment(s)`} onClick={(e) => {
+                            e.stopPropagation();
+                            // TODO: Open attachment dialog or preview
+                            // For now just show we have it
+                            if (attachments[0]?.url) {
+                                window.open(attachments[0].url, "_blank");
+                            }
+                        }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                        </Button>
+                    </div>
+                ) : null;
+            },
+        },
+        {
             accessorKey: "testMethod",
             header: ({ column }) => {
                 const isFiltered = column.getIsFiltered();
@@ -288,6 +326,7 @@ export function MeasurementsPage() {
                             }))
                         }
                     ]}
+                    getRowClassName={(row) => !row._isActive ? "opacity-60 bg-muted/40 data-[state=selected]:bg-muted grayscale-[0.8]" : ""}
                 />
             </div>
         </div>

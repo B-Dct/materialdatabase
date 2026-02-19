@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
     Select,
     SelectContent,
@@ -18,20 +19,20 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Upload, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { Measurement } from "@/types/domain";
 
 interface MeasurementUploadDialogProps {
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     parentId?: string;
-    parentType?: 'material' | 'layup';
+    parentType?: 'material' | 'layup' | 'assembly';
 }
 
 export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentType = 'material' }: MeasurementUploadDialogProps) {
-    const { addMeasurement, materials, properties, laboratories, fetchLaboratories, fetchMaterials, fetchProperties } = useAppStore();
+    const { addMeasurement, uploadFile, materials, properties, laboratories, fetchLaboratories, fetchMaterials, fetchProperties } = useAppStore();
     const [internalOpen, setInternalOpen] = useState(false);
 
     // Controlled or Uncontrolled
@@ -50,6 +51,7 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
     const [formData, setFormData] = useState({
         materialId: (parentType === 'material' && parentId) ? parentId : "unlinked",
         layupId: (parentType === 'layup' && parentId) ? parentId : undefined,
+        assemblyId: (parentType === 'assembly' && parentId) ? parentId : undefined,
         propertyId: "",
         value: "",
         unit: "",
@@ -58,14 +60,17 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
         valueType: "single",
         testMethod: "",
         date: new Date().toISOString().split('T')[0],
-        sourceFile: null as File | null,
-        sourceFilename: "",
-        orderNumber: ""
+        orderNumber: "",
+        comment: "",
+        // Files
+        certificateFile: null as File | null,
+        specimenDocFile: null as File | null
     });
 
     const [sampleCount, setSampleCount] = useState<string>("5");
     const [rawValues, setRawValues] = useState<string[]>(Array(5).fill(""));
     const [stats, setStats] = useState<any>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Update rawValues array size when sampleCount changes
     useEffect(() => {
@@ -91,10 +96,12 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
             import('@/lib/aerostats').then(({ calculateStats }) => {
                 const res = calculateStats(numbers);
                 setStats(res);
-                setFormData(prev => ({ ...prev, value: res.mean.toFixed(2) }));
+                if (mode === 'manual') {
+                    setFormData(prev => ({ ...prev, value: res.mean.toFixed(2) }));
+                }
             });
         }
-    }, [rawValues]);
+    }, [rawValues, mode]);
 
     const handleValueChange = (index: number, val: string) => {
         const newValues = [...rawValues];
@@ -112,62 +119,104 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
         });
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
+    const handleSubmit = async () => {
+        if (!formData.propertyId) return;
+        setIsSubmitting(true);
+
+        try {
+            const numbers = rawValues.map(v => parseFloat(v)).filter(n => !isNaN(n));
+            const finalValue = mode === 'manual' ? (stats?.mean || parseFloat(formData.value)) : parseFloat(formData.value);
+
+            // Upload Files
+            const attachments: any[] = [];
+            // We'll store simple metadata: { name, url, category, uploadedAt }
+
+            if (formData.certificateFile) {
+                const url = await uploadFile(formData.certificateFile, 'measurement-attachments');
+                attachments.push({
+                    id: Math.random().toString(36).substring(7),
+                    name: formData.certificateFile.name,
+                    url,
+                    category: "Test Certificate",
+                    uploadedAt: new Date().toISOString()
+                });
+            }
+
+            if (formData.specimenDocFile) {
+                const url = await uploadFile(formData.specimenDocFile, 'measurement-attachments');
+                attachments.push({
+                    id: Math.random().toString(36).substring(7),
+                    name: formData.specimenDocFile.name,
+                    url,
+                    category: "Specimen Documentation",
+                    uploadedAt: new Date().toISOString()
+                });
+            }
+
+            const newMeasurement: Omit<Measurement, 'id' | 'createdAt'> = {
+                materialId: formData.materialId === "unlinked" ? undefined : formData.materialId,
+                layupId: formData.layupId,
+                assemblyId: formData.assemblyId,
+                propertyDefinitionId: formData.propertyId,
+
+                values: mode === 'manual' ? numbers : [],
+                resultValue: finalValue,
+                statistics: (mode === 'manual' && stats) ? {
+                    ...stats,
+                    bValue: stats.bBasis,
+                    aValue: stats.aBasis
+                } : undefined,
+
+                unit: formData.unit,
+                laboratoryId: formData.laboratory || "In-House",
+                date: formData.date,
+                sourceType: mode === "upload" ? "pdf" : "manual",
+                // Legacy fields 
+                sourceFilename: formData.certificateFile?.name || (mode === 'upload' ? "Upload" : ""),
+                sourceRef: attachments.find(a => a.category === "Test Certificate")?.url,
+
+                reliability: formData.reliability as any,
+                testMethod: formData.testMethod,
+
+                comment: formData.comment,
+                attachments: attachments,
+
+                orderNumber: formData.orderNumber || "Pending",
+                processParams: {}
+            } as any;
+
+            await addMeasurement(newMeasurement);
+
+            setIsOpen(false);
+            // Reset
             setFormData({
-                ...formData,
-                sourceFile: file,
-                sourceFilename: file.name
+                materialId: (parentType === 'material' && parentId) ? parentId : "unlinked",
+                layupId: (parentType === 'layup' && parentId) ? parentId : undefined,
+                assemblyId: (parentType === 'assembly' && parentId) ? parentId : undefined,
+                propertyId: "",
+                value: "",
+                unit: "",
+                laboratory: "",
+                reliability: "engineering",
+                valueType: "single",
+                testMethod: "",
+                date: new Date().toISOString().split('T')[0],
+                orderNumber: "",
+                comment: "",
+                certificateFile: null,
+                specimenDocFile: null
             });
+            setRawValues(Array(5).fill(""));
+            setStats(null);
+
+        } catch (e) {
+            console.error("Failed to upload measurement", e);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    const handleSubmit = async () => {
-        if (!formData.propertyId) return;
 
-        const numbers = rawValues.map(v => parseFloat(v)).filter(n => !isNaN(n));
-        // Use calculated stats or manual single value if mode is upload/single?
-        // Prioritize calculated stats for manual mode
-
-        const finalValue = mode === 'manual' ? (stats?.mean || parseFloat(formData.value)) : parseFloat(formData.value);
-
-        const newMeasurement: Omit<Measurement, 'id' | 'createdAt'> = {
-            materialId: formData.materialId === "unlinked" ? undefined : formData.materialId,
-            layupId: formData.layupId,
-            propertyDefinitionId: formData.propertyId,
-
-            // New Fields
-            values: mode === 'manual' ? numbers : [],
-            resultValue: finalValue,
-            statistics: (mode === 'manual' && stats) ? {
-                ...stats,
-                bValue: stats.bBasis,
-                aValue: stats.aBasis
-            } : undefined,
-
-            unit: formData.unit,
-            laboratoryId: formData.laboratory || "In-House",
-            date: formData.date,
-            sourceType: mode === "upload" ? "pdf" : "manual",
-            sourceFilename: formData.sourceFilename,
-            sourceRef: mode === "upload" && formData.sourceFile ? URL.createObjectURL(formData.sourceFile) : undefined, // Mock URL
-
-            reliability: formData.reliability as any,
-            testMethod: formData.testMethod,
-            orderNumber: formData.orderNumber || "Pending",
-            processParams: {}
-        };
-
-        await addMeasurement(newMeasurement);
-        setIsOpen(false);
-        setFormData({ ...formData, value: "", sourceFile: null, sourceFilename: "", orderNumber: "" });
-        setRawValues(Array(5).fill(""));
-        setStats(null);
-    };
-
-    // Helper to get stats config
-    const selectedProp = properties.find(p => p.id === formData.propertyId);
 
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -186,79 +235,74 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
                     </DialogDescription>
                 </DialogHeader>
 
-                <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="manual">Manual Entry (Detailed)</TabsTrigger>
-                        <TabsTrigger value="upload">Upload / Quick Entry</TabsTrigger>
-                    </TabsList>
-
-                    <div className="grid gap-6 py-4">
-                        {/* 1. Header Information */}
-                        <div className="bg-muted/30 p-4 rounded-md border grid gap-4">
-                            <h4 className="font-semibold text-sm">Test Configuration</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Material Context</Label>
-                                    {parentType === 'layup' ? (
-                                        <Input value="Current Layup" disabled />
-                                    ) : (
-                                        <Select
-                                            value={formData.materialId}
-                                            onValueChange={(v) => setFormData({ ...formData, materialId: v })}
-                                            disabled={!!parentId}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select Material..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="unlinked" className="text-muted-foreground">-- Unlinked (General Test) --</SelectItem>
-                                                {materials.map(m => (
-                                                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    )}
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Laboratory</Label>
-                                    <Select value={formData.laboratory} onValueChange={v => setFormData({ ...formData, laboratory: v })}>
+                <div className="grid gap-6 py-4">
+                    {/* Common Header Information */}
+                    <div className="bg-muted/30 p-4 rounded-md border grid gap-4">
+                        <h4 className="font-semibold text-sm">Test Configuration</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Material Context</Label>
+                                {parentType === 'layup' || parentType === 'assembly' ? (
+                                    <Input value={parentType === 'layup' ? "Current Layup" : "Current Assembly"} disabled />
+                                ) : (
+                                    <Select
+                                        value={formData.materialId}
+                                        onValueChange={(v) => setFormData({ ...formData, materialId: v })}
+                                        disabled={!!parentId}
+                                    >
                                         <SelectTrigger>
-                                            <SelectValue placeholder="Select Lab..." />
+                                            <SelectValue placeholder="Select Material..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {laboratories.map(l => (
-                                                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                                            ))}
-                                            <SelectItem value="In-House">In-House</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Property</Label>
-                                    <Select value={formData.propertyId} onValueChange={handlePropertyChange}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Property..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {properties.map(p => (
-                                                <SelectItem key={p.id} value={p.id}>{p.name} ({p.unit})</SelectItem>
+                                            <SelectItem value="unlinked" className="text-muted-foreground">-- Unlinked (General Test) --</SelectItem>
+                                            {materials.map(m => (
+                                                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Test Method</Label>
-                                    <Input
-                                        value={formData.testMethod}
-                                        onChange={e => setFormData({ ...formData, testMethod: e.target.value })}
-                                        placeholder="e.g. ISO 527"
-                                    />
-                                </div>
+                                )}
                             </div>
+                            <div className="space-y-2">
+                                <Label>Laboratory</Label>
+                                <Select value={formData.laboratory} onValueChange={v => setFormData({ ...formData, laboratory: v })}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select Lab..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {laboratories.map(l => (
+                                            <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                                        ))}
+                                        <SelectItem value="In-House">In-House</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
 
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Property</Label>
+                                <Select value={formData.propertyId} onValueChange={handlePropertyChange}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select Property..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {properties.map(p => (
+                                            <SelectItem key={p.id} value={p.id}>{p.name} ({p.unit})</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Test Method</Label>
+                                <Input
+                                    value={formData.testMethod}
+                                    onChange={e => setFormData({ ...formData, testMethod: e.target.value })}
+                                    placeholder="e.g. ISO 527"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Order Number</Label>
                                 <Input
@@ -267,45 +311,48 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
                                     placeholder="e.g. WO-2024-001"
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label>Test Date</Label>
+                                <Input
+                                    type="date"
+                                    value={formData.date}
+                                    onChange={e => setFormData({ ...formData, date: e.target.value })}
+                                />
+                            </div>
                         </div>
-                        {/* 2. Manual Data Entry */}
-                        {mode === "manual" && (
-                            <div className="grid grid-cols-3 gap-6">
-                                <div className="col-span-1 space-y-4">
-                                    <div className="space-y-2">
-                                        <Label>Sample Count (n)</Label>
-                                        <Input
-                                            type="number"
-                                            value={sampleCount}
-                                            onChange={e => setSampleCount(e.target.value)}
-                                            min="1"
-                                            max="100"
-                                        />
-                                    </div>
-                                    <Label>Raw Values</Label>
-                                    <div className="grid gap-2 max-h-[300px] overflow-y-auto pr-2 border rounded-md p-2">
-                                        {rawValues.map((val, idx) => (
-                                            <div key={idx} className="flex items-center space-x-2">
-                                                <span className="text-xs text-muted-foreground w-6 text-right">{idx + 1}.</span>
-                                                <Input
-                                                    type="number"
-                                                    value={val}
-                                                    onChange={e => handleValueChange(idx, e.target.value)}
-                                                    placeholder="0.00"
-                                                    className="h-8"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                    </div>
 
-                                <div className="col-span-2 space-y-4">
-                                    <Label>Statistical Analysis (Live)</Label>
-                                    <div className="bg-slate-50 border rounded-md p-4 space-y-4">
-                                        {!stats ? (
-                                            <div className="text-muted-foreground text-sm italic">Enter values to see statistics.</div>
-                                        ) : (
-                                            <>
+                    <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="manual">Manual Entry (Detailed)</TabsTrigger>
+                            <TabsTrigger value="upload">Quick Results</TabsTrigger>
+                        </TabsList>
+
+                        <div className="py-4">
+                            {mode === "manual" && (
+                                <div className="grid grid-cols-3 gap-6">
+                                    <div className="col-span-1 space-y-4">
+                                        <div className="space-y-2">
+                                            <Label>Sample Count (n)</Label>
+                                            <Input type="number" value={sampleCount} onChange={e => setSampleCount(e.target.value)} min="1" max="100" />
+                                        </div>
+                                        <Label>Raw Values</Label>
+                                        <div className="grid gap-2 max-h-[250px] overflow-y-auto pr-2 border rounded-md p-2">
+                                            {rawValues.map((val, idx) => (
+                                                <div key={idx} className="flex items-center space-x-2">
+                                                    <span className="text-xs text-muted-foreground w-6 text-right">{idx + 1}.</span>
+                                                    <Input type="number" value={val} onChange={e => handleValueChange(idx, e.target.value)} placeholder="0.00" className="h-8" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="col-span-2 space-y-4">
+                                        <Label>Statistical Analysis</Label>
+                                        <div className="bg-slate-50 border rounded-md p-4 space-y-4">
+                                            {!stats ? (
+                                                <div className="text-muted-foreground text-sm italic">Enter values to see statistics.</div>
+                                            ) : (
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div>
                                                         <div className="text-sm text-muted-foreground">Mean</div>
@@ -315,77 +362,59 @@ export function MeasurementUploadDialog({ open, onOpenChange, parentId, parentTy
                                                         <div className="text-sm text-muted-foreground">Std Dev</div>
                                                         <div className="text-lg font-medium">{stats.stdDev.toFixed(2)}</div>
                                                     </div>
+                                                    {/* Additional stats... */}
                                                 </div>
-
-                                                <div className="border-t pt-2 mt-2">
-                                                    <div className="text-xs font-semibold uppercase text-muted-foreground mb-2">Design Values (per Config)</div>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {(!selectedProp?.statsConfig || selectedProp.statsConfig.calculateBasic) && (
-                                                            <div className="flex justify-between text-sm">
-                                                                <span>Min / Max:</span>
-                                                                <span className="font-mono">{stats.min} / {stats.max}</span>
-                                                            </div>
-                                                        )}
-                                                        {selectedProp?.statsConfig?.calculateBBasis && (
-                                                            <div className="flex justify-between text-sm bg-blue-50 p-1 rounded px-2">
-                                                                <span className="font-medium text-blue-700">B-Basis:</span>
-                                                                <span className="font-bold text-blue-700">{stats.bBasis ? stats.bBasis.toFixed(2) : 'N/A'}</span>
-                                                            </div>
-                                                        )}
-                                                        {selectedProp?.statsConfig?.calculateABasis && (
-                                                            <div className="flex justify-between text-sm bg-purple-50 p-1 rounded px-2">
-                                                                <span className="font-medium text-purple-700">A-Basis:</span>
-                                                                <span className="font-bold text-purple-700">{stats.aBasis ? stats.aBasis.toFixed(2) : 'N/A'}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {stats.warnings.length > 0 && (
-                                                    <div className="mt-2 bg-yellow-50 text-yellow-800 text-xs p-2 rounded border border-yellow-200">
-                                                        <ul className="list-disc pl-4">
-                                                            {stats.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
-                                                        </ul>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {mode === "upload" && (
-                            <div className="space-y-4">
-                                <Label>Report Summary Value</Label>
-                                <Input
-                                    type="number"
-                                    value={formData.value}
-                                    onChange={e => setFormData({ ...formData, value: e.target.value })}
-                                    placeholder="Value from report"
-                                />
-                                <TabsContent value="upload" className="mt-0 space-y-2">
-                                    <div className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center hover:bg-muted/50 transition-colors cursor-pointer relative">
-                                        <input
-                                            type="file"
-                                            className="absolute inset-0 opacity-0 cursor-pointer"
-                                            onChange={handleFileChange}
-                                            accept=".pdf,.csv,.xlsx"
-                                        />
-                                        <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                                        <p className="text-sm font-medium">
-                                            {formData.sourceFilename || "Click to upload report (PDF/Excel)"}
-                                        </p>
-                                    </div>
-                                </TabsContent>
+                            {mode === "upload" && (
+                                <div className="space-y-4">
+                                    <Label>Report Result Value (Mean)</Label>
+                                    <Input type="number" value={formData.value} onChange={e => setFormData({ ...formData, value: e.target.value })} placeholder="Value from report" />
+                                </div>
+                            )}
+                        </div>
+                    </Tabs>
+
+                    {/* Attachments & Comments */}
+                    <div className="space-y-4 border-t pt-4">
+                        <Label>Comments & Documentation</Label>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">Test Certificate / Report</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input type="file" onChange={e => setFormData({ ...formData, certificateFile: e.target.files?.[0] || null })} accept=".pdf,.xlsx,.csv" />
+                                </div>
                             </div>
-                        )}
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">Specimen Documentation</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input type="file" onChange={e => setFormData({ ...formData, specimenDocFile: e.target.files?.[0] || null })} accept=".pdf,.png,.jpg,.jpeg" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Comment</Label>
+                            <Textarea
+                                value={formData.comment}
+                                onChange={e => setFormData({ ...formData, comment: e.target.value })}
+                                placeholder="Add any observations, failure modes, or deviations..."
+                                className="h-20"
+                            />
+                        </div>
                     </div>
-                </Tabs>
+                </div>
 
                 <DialogFooter>
                     <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSubmit}>Save Record</Button>
+                    <Button onClick={handleSubmit} disabled={isSubmitting}>
+                        {isSubmitting ? "Saving..." : "Save Measurement"}
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog >

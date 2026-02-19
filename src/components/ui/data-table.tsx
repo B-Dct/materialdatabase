@@ -60,6 +60,7 @@ interface DataTableProps<TData, TValue> {
         }[]
     }[]
     onRowClick?: (row: TData) => void
+    getRowClassName?: (row: TData) => string
 }
 
 export function DataTable<TData, TValue>({
@@ -71,7 +72,8 @@ export function DataTable<TData, TValue>({
     globalFilter: controlledGlobalFilter, // Rename to avoid clash
     onGlobalFilterChange: controlledOnGlobalFilterChange,
     facetedFilters = [],
-    onRowClick
+    onRowClick,
+    getRowClassName
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -211,7 +213,7 @@ export function DataTable<TData, TValue>({
                                     key={row.id}
                                     data-state={row.getIsSelected() && "selected"}
                                     onClick={() => onRowClick?.(row.original)}
-                                    className={onRowClick ? "cursor-pointer hover:bg-muted/50" : ""}
+                                    className={`${onRowClick ? "cursor-pointer hover:bg-muted/50" : ""} ${getRowClassName ? getRowClassName(row.original) : ""}`}
                                 >
                                     {row.getVisibleCells().map((cell) => (
                                         <TableCell key={cell.id}>

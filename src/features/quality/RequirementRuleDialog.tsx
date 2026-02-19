@@ -25,7 +25,7 @@ export function RequirementRuleDialog({
     onSave,
     onDelete
 }: RequirementRuleDialogProps) {
-    const { properties } = useAppStore();
+    const { properties, layups, fetchLayups } = useAppStore();
 
     // Determine the active property definition
     // If editing, use rule's propId. If adding, use passed propertyId.
@@ -37,6 +37,11 @@ export function RequirementRuleDialog({
     const [target, setTarget] = useState<string>(initialRule?.target?.toString() || "");
     const [unit, setUnit] = useState<string>(initialRule?.unit || "");
     const [method, setMethod] = useState<string>(initialRule?.method || "");
+    const [referenceLayupId, setReferenceLayupId] = useState<string>(initialRule?.referenceLayupId || "");
+
+    useEffect(() => {
+        fetchLayups();
+    }, [fetchLayups]);
 
     // Reset/Init state when dialog opens or props change
     useEffect(() => {
@@ -48,6 +53,7 @@ export function RequirementRuleDialog({
                 setTarget(initialRule.target?.toString() || "");
                 setUnit(initialRule.unit || propDef.unit || "");
                 setMethod(initialRule.method || "");
+                setReferenceLayupId(initialRule.referenceLayupId || "");
             } else {
                 // Adding new
                 setMin(undefined);
@@ -56,6 +62,7 @@ export function RequirementRuleDialog({
                 setUnit(propDef.unit || "");
                 // Auto-select first method if available
                 setMethod(propDef.testMethods?.[0] || "");
+                setReferenceLayupId("");
             }
         }
     }, [open, initialRule, propDef]);
@@ -69,7 +76,8 @@ export function RequirementRuleDialog({
             max,
             target: target || undefined,
             unit: unit || undefined,
-            method: method || undefined
+            method: method || undefined,
+            referenceLayupId: referenceLayupId || undefined
         };
         onSave(newRule);
         onOpenChange(false);
@@ -78,6 +86,7 @@ export function RequirementRuleDialog({
     if (!propDef) return null;
 
     const availableMethods = propDef.testMethods || [];
+    const referenceLayups = layups.filter(l => l.isReference);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,6 +117,26 @@ export function RequirementRuleDialog({
                             <div className="text-sm text-muted-foreground italic border p-2 rounded bg-muted/50">
                                 No test methods defined for this property.
                             </div>
+                        )}
+                    </div>
+
+                    <div className="grid gap-2">
+                        <Label className="flex items-center gap-2">
+                            Reference Layup
+                            {propDef.scope === 'layup' && <b className="text-destructive">*</b>}
+                        </Label>
+                        <Select value={referenceLayupId} onValueChange={setReferenceLayupId}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select Reference Layup..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {referenceLayups.map(l => (
+                                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {propDef.scope === 'layup' && !referenceLayupId && (
+                            <p className="text-[10px] text-destructive">Required for layup-scoped properties.</p>
                         )}
                     </div>
 

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
-import { Plus, CheckCircle2, XCircle, HelpCircle, Archive } from 'lucide-react';
+import { Plus, CheckCircle2, XCircle, HelpCircle, Archive, Eye } from 'lucide-react';
 import { Protect } from '@/components/auth/Protect';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header';
@@ -43,7 +43,7 @@ export function MaterialListPage() {
         },
         {
             accessorKey: "name",
-            header: ({ column }) => <DataTableColumnHeader column={column} title="Material Name" />,
+            header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
             cell: ({ row }) => <span className="font-semibold text-base">{row.getValue("name")}</span>,
             enableSorting: true,
         },
@@ -137,7 +137,9 @@ export function MaterialListPage() {
                 return (
                     <div className="text-right flex justify-end gap-2">
                         <Link to={`/materials/${mat.id}`}>
-                            <Button variant="ghost" size="sm">View</Button>
+                            <Button variant="ghost" size="icon">
+                                <Eye className="h-4 w-4" />
+                            </Button>
                         </Link>
                     </div>
                 )

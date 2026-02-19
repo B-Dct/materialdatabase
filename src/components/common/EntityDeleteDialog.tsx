@@ -16,7 +16,7 @@ interface EntityDeleteDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     entityName: string;
-    entityType: "Material" | "Layup";
+    entityType: "Material" | "Layup" | "Assembly";
     onConfirm: () => void;
     isArchiving?: boolean;
 }

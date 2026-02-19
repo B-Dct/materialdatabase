@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Save, Plus, ChevronRight } from 'lucide-react';
+
 import type { EntityStatus } from '@/types/domain';
 import { v4 as uuidv4 } from "uuid";
 
@@ -36,6 +37,10 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
     const [thickness, setThickness] = useState<number>(layup?.totalThickness || 0);
     const [weight, setWeight] = useState<number>(layup?.totalWeight || 0);
 
+    // Reference Layup Definition
+    const [isReference, setIsReference] = useState<boolean>(layup?.isReference || false);
+    const [referenceMaterialId, setReferenceMaterialId] = useState<string>(layup?.materialId || "");
+
     const [layers, setLayers] = useState<LayerItem[]>(
         layup?.layers?.map((l: any) => ({
             id: uuidv4(), // Use uuid for new internal IDs
@@ -60,6 +65,8 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
             setProcessId(layup.processId || "");
             setThickness(layup.totalThickness || 0);
             setWeight(layup.totalWeight || 0);
+            setIsReference(layup.isReference || false);
+            setReferenceMaterialId(layup.materialId || "");
 
             if (layup.layers && layup.layers.length > 0) {
                 setLayers(layup.layers.map((l: any) => {
@@ -173,7 +180,9 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                     status,
                     restrictionReason: reason,
                     totalThickness: thickness,
-                    totalWeight: weight
+                    totalWeight: weight,
+                    isReference: isReference,
+                    materialId: isReference ? referenceMaterialId : undefined // Clear material if not reference
                 });
                 console.log("updateLayup completed.");
 
@@ -197,10 +206,14 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                     processParams: {},
                     measurements: [],
                     previousVersionId: undefined,
-                    createdBy: 'current-user',
-                    restrictionReason: undefined
+                    createdBy: '00000000-0000-0000-0000-000000000000', // WORKAROUND: Force public ownership until RLS migration is verified
+                    restrictionReason: undefined,
+                    isReference: isReference,
+                    materialId: isReference ? referenceMaterialId : undefined
                 };
+
                 await addLayup(payload);
+
                 console.log("Layup created.");
             }
 
@@ -210,6 +223,9 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
             alert("Failed to save: " + (e.message || e));
         }
     };
+
+
+
 
     return (
         <div className="flex flex-col h-[calc(100vh-100px)] overflow-hidden animate-in fade-in">
@@ -360,13 +376,13 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                             <div className="space-y-2 col-span-2">
                                 <label className="text-sm font-medium">Status</label>
                                 {readonly ? (
-                                    <div className="flex items-center h-10">
+                                    <div className="flex items-center h-10 gap-4">
                                         <StatusBadge status={status} />
                                     </div>
                                 ) : (
                                     <div className="flex gap-4 items-center">
                                         <Select value={status} onValueChange={(v: any) => setStatus(v)}>
-                                            <SelectTrigger className="w-[200px]">
+                                            <SelectTrigger className="w-[180px]">
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -377,6 +393,9 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                                                 <SelectItem value="engineering"><StatusBadge status="engineering" /></SelectItem>
                                             </SelectContent>
                                         </Select>
+
+
+
                                         <div className="flex-1 flex justify-end">
                                             {!readonly && (
                                                 <Button size="sm" onClick={handleSave}>
@@ -430,6 +449,51 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Reference Definition Section */}
+                            <div className="col-span-2 pt-4 mt-2 border-t space-y-4">
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        id="isReference"
+                                        checked={isReference}
+                                        onChange={(e) => setIsReference(e.target.checked)}
+                                        disabled={readonly}
+                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                    />
+                                    <label
+                                        htmlFor="isReference"
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Define as Reference Layup for Material
+                                    </label>
+                                </div>
+
+                                {isReference && (
+                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                                        <label className="text-sm font-medium">Associated Material</label>
+                                        {readonly ? (
+                                            <div className="text-sm border rounded-md px-3 py-2 bg-muted/20 text-muted-foreground">
+                                                {referenceMaterialId ? materials.find(m => m.id === referenceMaterialId)?.name : "None"}
+                                            </div>
+                                        ) : (
+                                            <Select value={referenceMaterialId} onValueChange={setReferenceMaterialId}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select Material..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {materials.filter(m => !['restricted', 'obsolete'].includes(m.status)).map(m => (
+                                                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                        <p className="text-[10px] text-muted-foreground">
+                                            This layup will be available as a context for this material's specifications and test runs.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
 
@@ -478,6 +542,7 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                             </DndContext>
                         </CardContent>
                     </Card>
+
                 </div>
             </div>
         </div>

@@ -108,7 +108,8 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
             const propDef = globalProperties.find(pd => pd.id === m.propertyDefinitionId);
             if (!propDef) return;
             const name = propDef.name;
-            const method = m.testMethod || "";
+            // Normalize method to match row ID logic
+            const method = m.testMethod ? m.testMethod.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
 
             // Keying by Name + Method
             const key = `${name}|${method}`;
@@ -141,28 +142,37 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
             unit: string,
             stdValues: Record<string, { min?: number, max?: number, target?: number | string }>, // ProfileID -> Rules
             specValues: Record<string, MaterialProperty>, // SpecID -> Value
+            stats?: { mean: number, min: number, max: number, count: number }
         }>();
 
         // Helper: Aggressive normalization for method matching (e.g. "ISO-1183" == "ISO 1183")
         const normalizeMethodString = (s: string) => {
             if (!s) return "";
-            return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+            try {
+                return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+            } catch (e) {
+                console.error("Error normalizing method:", s, e);
+                return "";
+            }
         };
 
         // Helper to get/init row
         const getRow = (name: string, unit: string, method: string = "") => {
             const rawMethod = (method || "").trim();
             const normalizedMethodKey = normalizeMethodString(rawMethod);
-            const normalizedName = name.trim();
+            const rawName = (name || "").trim(); // Safety check
+            if (!rawName) return null; // Skip invalid rows
+
+            const normalizedName = rawName;
 
             // Try to align name with global definition to handle faint mismatches
-            const propDef = globalProperties.find(p => p.name.toLowerCase() === normalizedName.toLowerCase());
+            const propDef = globalProperties.find(p => p.name && p.name.toLowerCase() === normalizedName.toLowerCase());
             const finalName = propDef ? propDef.name : normalizedName;
 
             const key = `${finalName}|${normalizedMethodKey}`;
 
             if (!rows.has(key)) {
-                rows.set(key, { id: key, name: finalName, method: rawMethod, unit, stdValues: {}, specValues: {} });
+                rows.set(key, { id: key, name: finalName, method: rawMethod, unit: unit || "", stdValues: {}, specValues: {} });
             }
             return rows.get(key)!;
         };
@@ -170,31 +180,42 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
         // A. Process Standards (Requirement Profiles)
         assignedProfiles.forEach(prof => {
             if (!visibleColumnIds.includes(prof.id)) return;
+            if (!prof.rules) {
+                console.warn("Profile has no rules:", prof.id);
+                return;
+            }
             prof.rules.forEach(rule => {
+                // propDef lookup
                 const propDef = globalProperties.find(pd => pd.id === rule.propertyId);
                 const name = propDef?.name || rule.propertyId; // Fallback
                 const unit = rule.unit || propDef?.unit || '';
                 const method = rule.method || "";
 
                 const row = getRow(name, unit, method);
-                row.stdValues[prof.id] = { min: rule.min, max: rule.max, target: rule.target };
+                if (row) {
+                    row.stdValues[prof.id] = { min: rule.min, max: rule.max, target: rule.target };
+                }
             });
         });
 
         // B. Process Specification Values (Layup Properties)
-        // Only include properties that are LINKED to a specification
-        (layup.properties || []).filter(p => !!p.specificationId).forEach(p => {
+        const properties = Array.isArray(layup.properties) ? layup.properties : [];
+
+
+        properties.filter(p => !!p.specificationId).forEach(p => {
             if (p.specificationId && !visibleColumnIds.includes(p.specificationId)) return;
 
             // MaterialProperty uses 'method' field
             const method = p.method || "";
             const row = getRow(p.name, p.unit, method);
 
-            // Ensure unit consistency warning? For now assume matching or overwrite
-            if (!row.unit) row.unit = p.unit;
+            if (row) {
+                // Ensure unit consistency warning? For now assume matching or overwrite
+                if (!row.unit) row.unit = p.unit;
 
-            if (p.specificationId) {
-                row.specValues[p.specificationId] = p;
+                if (p.specificationId) {
+                    row.specValues[p.specificationId] = p;
+                }
             }
         });
 
@@ -202,19 +223,16 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
         statsMap.forEach((_, key) => {
             if (!rows.has(key)) {
                 const [name, method] = key.split('|');
-                // We need to look up Unit... tough if coming from map key only. 
-                // We'll try to find any measurement matching this to get unit.
-                // Or look up PropDef by name.
                 const propDef = globalProperties.find(pd => pd.name === name);
                 const unit = propDef?.unit || "";
-
-                getRow(name, unit, method); // Creates row if missing
+                getRow(name, unit, method);
             }
         });
 
         const rawRows = Array.from(rows.values());
 
-        // Post-Processing: Merge "Empty Method" rows into "Specific Method" rows if unambiguous
+        // Post-Processing: Merge duplicate rows based on Method compatibility
+        // 1. Group by Name
         const byName = new Map<string, typeof rawRows>();
         rawRows.forEach(r => {
             if (!byName.has(r.name)) byName.set(r.name, []);
@@ -224,34 +242,84 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
         const finalRows: typeof rawRows = [];
 
         byName.forEach((groupRows) => {
-            const emptyMethodRow = groupRows.find(r => !r.method);
-            const specificMethodRows = groupRows.filter(r => !!r.method);
+            const mergedGroup: typeof rawRows = [];
+            const processedIndices = new Set<number>();
 
-            if (emptyMethodRow && specificMethodRows.length === 1) {
-                // Merge Empty into Specific
-                const specific = specificMethodRows[0];
+            // Sort group to prioritize rows with Definitions (Standards/Specs) as targets
+            groupRows.sort((a, b) => {
+                const aHasDef = Object.keys(a.stdValues).length > 0 || Object.keys(a.specValues).length > 0;
+                const bHasDef = Object.keys(b.stdValues).length > 0 || Object.keys(b.specValues).length > 0;
+                return (bHasDef ? 1 : 0) - (aHasDef ? 1 : 0);
+            });
 
-                // Merge Standard Values
-                Object.entries(emptyMethodRow.stdValues).forEach(([profileId, rule]) => {
-                    if (!specific.stdValues[profileId]) {
-                        specific.stdValues[profileId] = rule;
+            for (let i = 0; i < groupRows.length; i++) {
+                if (processedIndices.has(i)) continue;
+                const target = groupRows[i];
+                const targetMethodNorm = normalizeMethodString(target.method);
+
+                for (let j = i + 1; j < groupRows.length; j++) {
+                    if (processedIndices.has(j)) continue;
+                    const source = groupRows[j];
+                    const sourceMethodNorm = normalizeMethodString(source.method);
+
+                    // Check Compatibility
+                    let isCompatible = false;
+
+                    // 1. One is empty -> Match
+                    if (!targetMethodNorm || !sourceMethodNorm) {
+                        isCompatible = true;
                     }
-                });
-
-                // Merge Spec Values
-                Object.entries(emptyMethodRow.specValues).forEach(([specId, val]) => {
-                    if (!specific.specValues[specId]) {
-                        specific.specValues[specId] = val;
+                    // 2. Substring Match (Bidirectional)
+                    else if (targetMethodNorm.includes(sourceMethodNorm) || sourceMethodNorm.includes(targetMethodNorm)) {
+                        isCompatible = true;
                     }
-                });
 
-                // Merge Unit
-                if (!specific.unit && emptyMethodRow.unit) specific.unit = emptyMethodRow.unit;
+                    if (isCompatible) {
+                        // MERGE source into target
+                        processedIndices.add(j);
 
-                finalRows.push(specific);
-            } else {
-                groupRows.forEach(r => finalRows.push(r));
+                        // Merge Standard Values
+                        Object.entries(source.stdValues).forEach(([profileId, rule]) => {
+                            if (!target.stdValues[profileId]) target.stdValues[profileId] = rule;
+                        });
+
+                        // Merge Spec Values
+                        Object.entries(source.specValues).forEach(([specId, val]) => {
+                            if (!target.specValues[specId]) target.specValues[specId] = val;
+                        });
+
+                        // Merge Unit
+                        if (!target.unit && source.unit) target.unit = source.unit;
+
+                        // Merge Stats
+                        const sourceStats = source.stats || statsMap.get(source.id);
+                        if (sourceStats) {
+                            if (!target.stats) target.stats = statsMap.get(target.id); // Ensure init
+                            const targetStats = target.stats;
+
+                            if (!targetStats) {
+                                target.stats = sourceStats;
+                            } else {
+                                // Aggregate
+                                const combinedCount = targetStats.count + sourceStats.count;
+                                const combinedMean = ((targetStats.mean * targetStats.count) + (sourceStats.mean * sourceStats.count)) / combinedCount;
+                                const combinedMin = Math.min(targetStats.min, sourceStats.min);
+                                const combinedMax = Math.max(targetStats.max, sourceStats.max);
+
+                                target.stats = {
+                                    mean: combinedMean,
+                                    min: combinedMin,
+                                    max: combinedMax,
+                                    count: combinedCount
+                                };
+                            }
+                        }
+                    }
+                }
+                mergedGroup.push(target);
             }
+
+            mergedGroup.forEach(r => finalRows.push(r));
         });
 
         return finalRows.sort((a, b) => {
@@ -272,6 +340,7 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
             return a.method.localeCompare(b.method);
         });
     }, [assignedProfiles, layupSpecs, layup.properties, globalProperties, visibleColumnIds, statsMap]);
+
 
     // Columns Definition for UI
     const visibleProfiles = assignedProfiles.filter(p => visibleColumnIds.includes(p.id));
@@ -422,7 +491,7 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
                                     </TableRow>
                                 )}
                                 {matrixRows.map((row) => {
-                                    const stats = statsMap.get(row.id);
+                                    const stats = row.stats || statsMap.get(row.id);
                                     return (
                                         <TableRow key={row.id} className="hover:bg-muted/30">
                                             <TableCell></TableCell>

@@ -38,6 +38,7 @@ export function MainLayout() {
 
     const configItems: NavItem[] = [
         { href: "/quality/measurements", label: "Measurements", icon: FlaskConical },
+        { href: "/quality/test-methods", label: "Test Methods", icon: FlaskConical },
         { href: "/standards", label: "Standards", icon: ClipboardList },
         { href: "/imports", label: "Data Imports", icon: ClipboardList, permission: 'import:data' },
     ];

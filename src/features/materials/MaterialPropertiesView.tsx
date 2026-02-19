@@ -1,9 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
-import type { Material, MaterialProperty, Measurement } from '@/types/domain';
-import { Button } from '@/components/ui/button';
-import { Card } from "@/components/ui/card";
-import { Columns } from 'lucide-react';
+import { FileText, Layers, AlertCircle, Settings2, Filter } from 'lucide-react';
+import type { Material, Measurement, RequirementRule, MaterialProperty, RequirementProfile, ReferenceLayupArchitecture } from '@/types/domain';
 import { CATEGORY_ORDER } from "@/lib/propertyUtils";
 import {
     Table,
@@ -14,13 +12,10 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import {
     Select,
     SelectContent,
@@ -28,484 +23,699 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Badge } from '@/components/ui/badge';
-
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface MaterialPropertiesViewProps {
     material: Material;
     measurements: Measurement[];
 }
 
+type ContextType = 'base' | 'layup' | 'assembly';
+
+interface PropertyContext {
+    id: string;
+    name: string;
+    type: ContextType;
+    obj?: any; // The Layup or Assembly object
+}
+
+interface CellData {
+    rules: RequirementRule[]; // From Standards
+    specs: Record<string, MaterialProperty>; // From Specifications (Key: specificationId)
+    manual?: MaterialProperty; // From Layup/Assembly manual properties
+    stats?: { mean: number, min: number, max: number, count: number }; // From Measurements
+}
+
 export function MaterialPropertiesView({ material, measurements }: MaterialPropertiesViewProps) {
-    const { requirementProfiles, specifications, properties: globalProperties } = useAppStore();
+    const { requirementProfiles, specifications, properties: globalProperties, layups, assemblies } = useAppStore();
 
-    // 1. Data Prep
-    const assignedProfiles = useMemo(() => {
-        return requirementProfiles.filter(p => (material.assignedProfileIds || []).includes(p.id));
-    }, [requirementProfiles, material.assignedProfileIds]);
+    // 1. Define Contexts (Actual Data Sources)
+    const contexts = useMemo<PropertyContext[]>(() => {
+        const list: PropertyContext[] = [{ id: 'base', name: 'Base Material Properties', type: 'base' }];
 
+        // Derive linked layups (Direct, Variant-based, or Assigned)
+        // 1. Variant IDs for this material
+        const variantIds = new Set((material.variants || []).map(v => v.variantId));
+        // Add base material variant ID if not present? (Usually 'Standard' variant covers it, or variantId might be empty?)
+
+        // 2. Find layups
+        const relevantLayups = layups.filter(l => {
+            // Direct link
+            if (l.materialId === material.id) return true;
+            // Assigned link
+            if (material.assignedReferenceLayupIds?.includes(l.id)) return true;
+            // Variant link (via layers)
+            if (l.layers?.some(layer => variantIds.has(layer.materialVariantId))) return true;
+            return false;
+        });
+
+        relevantLayups.forEach(l => {
+            // Avoid duplicates if multiple conditions match (relevantLayups filter handles it per item, but if logic was separate arrays...)
+            // Since filter iterates once, duplicates in 'relevantLayups' are impossible.
+            // Check if already in list? (contexts list)
+            if (!list.some(c => c.id === l.id && c.type === 'layup')) {
+                list.push({ id: l.id, name: `Reference Layup: ${l.name}`, type: 'layup', obj: l });
+            }
+        });
+
+        (material.assignedReferenceAssemblyIds || []).forEach(id => {
+            const a = assemblies.find(x => x.id === id);
+            if (a) list.push({ id: a.id, name: `Reference Assembly: ${a.name}`, type: 'assembly', obj: a });
+        });
+
+        return list;
+    }, [material, layups, assemblies]);
+
+    // 2. Resolve Active Profiles & Architectures
+    const { activeProfiles, definedArchitectures } = useMemo(() => {
+        const list: { profile: RequirementProfile, contextId: string }[] = [];
+        const archs = new Map<string, ReferenceLayupArchitecture>();
+
+        // For Base Context (Material Level)
+        (material.assignedProfileIds || []).forEach(pid => {
+            const p = requirementProfiles.find(rp => rp.id === pid);
+            if (p) {
+                list.push({ profile: p, contextId: 'base' });
+                // Collect Architectures defined in this profile
+                p.layupArchitectures?.forEach(arch => {
+                    archs.set(arch.id, arch);
+                });
+            }
+        });
+
+        // For Reference Contexts
+        contexts.forEach(ctx => {
+            if (ctx.type === 'base') return;
+            const entity = ctx.obj;
+            // If the entity itself has assigned profiles, add them
+            if (entity && entity.assignedProfileIds) {
+                entity.assignedProfileIds.forEach((pid: string) => {
+                    const p = requirementProfiles.find(rp => rp.id === pid);
+                    if (p) {
+                        list.push({ profile: p, contextId: ctx.id });
+                    }
+                });
+            }
+
+            // [FIX] Ensure the Context's Architecture is included even if no profile is active
+            if (ctx.type === 'layup' && entity.architectureTypeId) {
+                if (!archs.has(entity.architectureTypeId)) {
+                    // Try to find definition in ANY RequirementProfile (Global lookup)
+                    for (const rp of requirementProfiles) {
+                        const found = rp.layupArchitectures?.find(a => a.id === entity.architectureTypeId);
+                        if (found) {
+                            archs.set(found.id, found);
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        return { activeProfiles: list, definedArchitectures: Array.from(archs.values()) };
+    }, [requirementProfiles, material, contexts]);
+
+    // 3. Resolve Specifications
     const materialSpecs = useMemo(() => {
-        return specifications.filter(s => s.materialId === material.id);
+        // Only include specifications explicitly linked to this material
+        // Filtering by contexts might be too broad if contexts include Reference Layups that have their own unrelated specs?
+        // Actually, a Specification is usually defined For a Material.
+        // If it's linked to a Layup, it might be a Process Spec?
+        // Let's stick to Material ID matching for now to be safe, as requested by user ("Phenolic Prepreg" appearing might be due to Layup context).
+        // User said "Standard appearing... I only assigned DSM 0001".
+        // DSM 0001 is a Profile. "Phenolic Prepreg" is likely a Layup Name being picked up as a Context, and maybe there's a Spec named that?
+        // Or maybe my 'contexts' derivation is adding Layups as contexts, and then I look for specs for those layups?
+        // The user wants to see specs for THIS material.
+
+        const base = specifications.filter(s => s.materialId === material.id);
+        return base;
     }, [specifications, material.id]);
 
-    // 2. State for Columns
-    // IDs of Specs/Standards that are visible. Default to all.
-    const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([]);
+    // 4. Statistics Calculation
+    const [measurementFilter, setMeasurementFilter] = useState<{ type: 'all' | 'last_n' | 'time', value: number | string }>({ type: 'all', value: 0 });
+    const [selectedStandardIds, setSelectedStandardIds] = useState<string[]>([]);
 
-    // Test Data Filters
-    const [timeFilter, setTimeFilter] = useState<string>("all");
-    const [limitFilter, setLimitFilter] = useState<string>("all");
-
-    // Initialize open columns when data is loaded
+    // Initialize selected standard IDs once
     useEffect(() => {
-        const allIds = [
-            ...assignedProfiles.map(p => p.id),
-            ...materialSpecs.map(s => s.id)
-        ];
-        // Only set default if we haven't set any yet (or if data changed significantly?)
-        // For simplicity, let's just ensure we capture new ones or default to all if empty initially.
-        if (visibleColumnIds.length === 0 && allIds.length > 0) {
-            setVisibleColumnIds(allIds);
-        }
-    }, [assignedProfiles.length, materialSpecs.length]);
-
-
-    // 3. Filtered Measurements (Stats)
-    const filteredMeasurements = useMemo(() => {
-        let filtered = [...measurements].filter(m => m.isActive !== false).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        // Time Filter
-        if (timeFilter !== 'all') {
-            const now = new Date();
-            const cutoff = new Date();
-            if (timeFilter === '1m') cutoff.setMonth(now.getMonth() - 1);
-            if (timeFilter === '6m') cutoff.setMonth(now.getMonth() - 6);
-            if (timeFilter === '1y') cutoff.setFullYear(now.getFullYear() - 1);
-            filtered = filtered.filter(m => new Date(m.date) >= cutoff);
-        }
-
-        // Limit Filter
-        if (limitFilter !== 'all') {
-            const limit = parseInt(limitFilter);
-            if (!isNaN(limit)) {
-                filtered = filtered.slice(0, limit);
+        const baseIds = new Set<string>();
+        // Only select profiles that are directly assigned to the material (contextId === 'base')
+        activeProfiles.forEach(p => {
+            if (p.contextId === 'base') {
+                baseIds.add(p.profile.id);
             }
-        }
+        });
 
-        return filtered;
-    }, [measurements, timeFilter, limitFilter]);
+        if (selectedStandardIds.length === 0 && baseIds.size > 0) {
+            setSelectedStandardIds(Array.from(baseIds));
+        }
+    }, [activeProfiles]); // Run only when activeProfiles changes
 
     const statsMap = useMemo(() => {
         const map = new Map<string, { mean: number, min: number, max: number, count: number }>();
-        const grouped = new Map<string, number[]>();
+        const grouped = new Map<string, { value: number, date: string }[]>();
 
-        filteredMeasurements.forEach(m => {
+        // Filter measurements (Active only)
+        const activeMeasurements = measurements.filter(m => m.isActive !== false);
+
+        activeMeasurements.forEach(m => {
             const propDef = globalProperties.find(pd => pd.id === m.propertyDefinitionId);
             if (!propDef) return;
-            const name = propDef.name;
-            const method = m.testMethod || "";
+            const contextId = m.referenceLayupId || 'base';
 
-            // Keying by Name + Method
-            const key = `${name}|${method}`;
+            const key = `${contextId}|${propDef.id}`;
             if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key)!.push(m.resultValue);
+            grouped.get(key)!.push({ value: m.resultValue, date: m.date });
         });
 
-        grouped.forEach((vals, key) => {
-            const valid = vals.filter(v => !isNaN(v));
-            if (valid.length > 0) {
-                const sum = valid.reduce((a, b) => a + b, 0);
+        grouped.forEach((items, key) => {
+            // Apply Filters (Per Property Group)
+            let filteredItems = items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort Descending by Date
+
+            if (measurementFilter.type === 'last_n') {
+                filteredItems = filteredItems.slice(0, Number(measurementFilter.value));
+            } else if (measurementFilter.type === 'time') {
+                const cutoff = new Date();
+                if (measurementFilter.value === '6m') cutoff.setMonth(cutoff.getMonth() - 6);
+                if (measurementFilter.value === '1y') cutoff.setFullYear(cutoff.getFullYear() - 1);
+                filteredItems = filteredItems.filter(item => new Date(item.date) >= cutoff);
+            }
+
+            const validValues = filteredItems.map(i => i.value).filter(v => !isNaN(v));
+
+            if (validValues.length > 0) {
+                const sum = validValues.reduce((a, b) => a + b, 0);
                 map.set(key, {
-                    mean: sum / valid.length,
-                    min: Math.min(...valid),
-                    max: Math.max(...valid),
-                    count: valid.length
+                    mean: sum / validValues.length,
+                    min: Math.min(...validValues),
+                    max: Math.max(...validValues),
+                    count: validValues.length
                 });
             }
         });
         return map;
-    }, [filteredMeasurements, globalProperties]);
+    }, [measurements, globalProperties, measurementFilter]);
 
-    // 4. Matrix Calculation
-    const matrixRows = useMemo(() => {
-        // Key: Property Name + Method. Value: Row Data
-        const rows = new Map<string, {
-            id: string, // Composite key
-            name: string,
-            method: string,
-            unit: string,
-            stdValues: Record<string, { min?: number, max?: number, target?: number | string }>, // ProfileID -> Rules
-            specValues: Record<string, MaterialProperty>, // SpecID -> Value
-        }>();
 
-        // Helper: Aggressive normalization for method matching (e.g. "ISO-1183" == "ISO 1183")
-        const normalizeMethodString = (s: string) => {
-            if (!s) return "";
-            return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-        };
+    // Helper: Build Row Data including Specs
+    const buildRowData = (rule: RequirementRule | null, propDef: any, contextId: string) => {
+        const cell: CellData = { rules: rule ? [rule] : [], specs: {} };
 
-        // Helper to get/init row
-        const getRow = (name: string, unit: string, method: string = "") => {
-            const rawMethod = (method || "").trim();
-            const normalizedMethodKey = normalizeMethodString(rawMethod);
-            const normalizedName = name.trim();
+        // 1. Manual Value from Context Object
+        const ctx = contexts.find(c => c.id === contextId);
+        if (ctx && ctx.obj) {
+            const props = Array.isArray(ctx.obj.properties) ? ctx.obj.properties : Object.values(ctx.obj.properties || {});
+            const manual = props.find((p: any) => p.name === propDef.name);
+            if (manual) cell.manual = manual;
+        } else if (contextId === 'base') {
+            const props = material.properties || [];
+            const manual = props.find(p => p.name === propDef.name);
+            if (manual) cell.manual = manual;
+        }
 
-            // Try to align name with global definition to handle faint mismatches
-            const propDef = globalProperties.find(p => p.name.toLowerCase() === normalizedName.toLowerCase());
-            const finalName = propDef ? propDef.name : normalizedName;
+        // 2. Stats
+        const statsKey = `${contextId}|${propDef.id}`;
+        if (statsMap.has(statsKey)) {
+            cell.stats = statsMap.get(statsKey);
+        }
 
-            // Use normalized method key for grouping, but keep rawMethod for first display
-            const key = `${finalName}|${normalizedMethodKey}`;
-
-            if (!rows.has(key)) {
-                rows.set(key, { id: key, name: finalName, method: rawMethod, unit, stdValues: {}, specValues: {} });
+        // 3. Specs
+        // Check if any active spec has a value for this property
+        materialSpecs.forEach(spec => {
+            // Check for property match regardless of context (Base or Layup)
+            // If the spec defines "Cured Ply Thickness" (Layup Prop), it should show up.
+            const props = Array.isArray(spec.properties) ? spec.properties : Object.values(spec.properties || {});
+            const match = props.find((p: any) => p.name === propDef.name); // Match by name
+            if (match) {
+                cell.specs[spec.id] = match;
             }
-            return rows.get(key)!;
-        };
+        });
 
-        // A. Process Standards (Requirement Profiles)
-        assignedProfiles.forEach(prof => {
-            if (!visibleColumnIds.includes(prof.id)) return;
-            prof.rules.forEach(rule => {
-                const propDef = globalProperties.find(pd => pd.id === rule.propertyId);
-                const name = propDef?.name || rule.propertyId; // Fallback
-                const unit = rule.unit || propDef?.unit || '';
-                const method = rule.method || "";
+        return cell;
+    };
 
-                const row = getRow(name, unit, method);
-                row.stdValues[prof.id] = { min: rule.min, max: rule.max, target: rule.target };
+    const renderActualCell = (cell: CellData) => {
+        if (cell.stats) {
+            return (
+                <div className="flex flex-col items-center">
+                    <span className="font-bold text-green-700">{cell.stats.mean.toFixed(2)}</span>
+                    <span className="text-[10px] text-muted-foreground">n={cell.stats.count}</span>
+                </div>
+            );
+        }
+        if (cell.manual) {
+            return (
+                <div className="flex flex-col items-center">
+                    <span className="font-medium">{cell.manual.value}</span>
+                    <span className="text-[10px] text-muted-foreground">{cell.manual.unit}</span>
+                </div>
+            );
+        }
+        return <span className="text-muted-foreground/30">-</span>;
+    };
+
+
+
+
+    // --- RENDER SECTIONS ---
+
+    // SECTION 1: Base Material Properties
+    const renderBaseProperties = () => {
+        const ruleMap = new Map<string, Map<string, RequirementRule>>(); // PropertyId -> ProfileId -> Rule
+
+        activeProfiles.forEach(({ profile }) => {
+            profile.rules.forEach(r => {
+                if (r.scope === 'material' || !r.scope) {
+                    if (!ruleMap.has(r.propertyId)) ruleMap.set(r.propertyId, new Map());
+                    ruleMap.get(r.propertyId)!.set(profile.id, r);
+                }
             });
         });
 
-        // B. Process Specification Values (Material Properties)
-        // Only include properties that are LINKED to a specification
-        (material.properties || []).filter(p => !!p.specificationId).forEach(p => {
-            if (p.specificationId && !visibleColumnIds.includes(p.specificationId)) return;
-
-            // MaterialProperty uses 'method' field
-            const method = p.method || "";
-            const row = getRow(p.name, p.unit, method);
-
-            // Ensure unit consistency warning? For now assume matching or overwrite
-            if (!row.unit) row.unit = p.unit;
-
-            if (p.specificationId) {
-                row.specValues[p.specificationId] = p;
-            }
+        const propertyIds = new Set(ruleMap.keys());
+        (material.properties || []).forEach(p => {
+            const def = globalProperties.find(gp => gp.name === p.name);
+            if (def) propertyIds.add(def.id);
+        });
+        materialSpecs.forEach(s => {
+            const props = Array.isArray(s.properties) ? s.properties : Object.values(s.properties || {});
+            props.forEach((p: any) => {
+                const def = globalProperties.find(gp => gp.name === p.name);
+                if (def) propertyIds.add(def.id);
+            });
         });
 
-        // C. Process Measurements (ensure rows exist for actual data even if no spec/std)
-        // We iterate statsMap keys to ensure we show rows that ONLY have test data
-        statsMap.forEach((_, key) => {
-            if (!rows.has(key)) {
-                const [name, method] = key.split('|');
-                // We need to look up Unit... tough if coming from map key only. 
-                // We'll try to find any measurement matching this to get unit.
-                // Or look up PropDef by name.
-                const propDef = globalProperties.find(pd => pd.name === name);
-                const unit = propDef?.unit || "";
+        // Create a unique list of ALL available profiles for the Popover (Selection Control)
+        const availableProfiles = Array.from(new Set(activeProfiles.map(p => p.profile)));
 
-                getRow(name, unit, method); // Creates row if missing
-            }
+        // Filter profiles for the Table (Columns) based on selection AND rules existence
+        const visibleProfiles = availableProfiles.filter(profile => {
+            // Must be selected
+            if (!selectedStandardIds.includes(profile.id)) return false;
+            return profile.rules.some(r => r.scope === 'material' || !r.scope);
         });
 
-        const rawRows = Array.from(rows.values());
+        // Filter specs for the Table (Columns) based on selection
+        const visibleSpecs = materialSpecs.filter(spec => selectedStandardIds.includes(spec.id));
 
-        // Post-Processing: Merge "Empty Method" rows into "Specific Method" rows if unambiguous
-        // Group by Name
-        const byName = new Map<string, typeof rawRows>();
-        rawRows.forEach(r => {
-            if (!byName.has(r.name)) byName.set(r.name, []);
-            byName.get(r.name)!.push(r);
-        });
+        const rows = Array.from(propertyIds).map(pid => {
+            const def = globalProperties.find(gp => gp.id === pid);
+            if (!def) return null;
 
-        const finalRows: typeof rawRows = [];
+            const profileRules = ruleMap.get(pid) || new Map();
+            // Pick a representative rule for Method/Unit if available, or finding in manual/specs
+            const firstRule = Array.from(profileRules.values())[0];
 
-        byName.forEach((groupRows) => {
-            const emptyMethodRow = groupRows.find(r => !r.method);
-            const specificMethodRows = groupRows.filter(r => !!r.method);
+            // Build cells for each profile
+            const profileCells: { [key: string]: RequirementRule | undefined } = {};
+            visibleProfiles.forEach(p => {
+                profileCells[p.id] = profileRules.get(p.id);
+            });
 
-            if (emptyMethodRow && specificMethodRows.length === 1) {
-                // Merge Empty into Specific
-                const specific = specificMethodRows[0];
+            const cell = buildRowData(firstRule || null, def, 'base');
+            return { def, firstRule, profileCells, cell };
+        }).filter((r): r is { def: any, firstRule: RequirementRule | undefined, profileCells: any, cell: CellData } => !!r)
+            .sort((a, b) => {
+                const idxA = CATEGORY_ORDER.indexOf(a.def.category?.toLowerCase() || "");
+                const idxB = CATEGORY_ORDER.indexOf(b.def.category?.toLowerCase() || "");
+                if (idxA !== -1 && idxB !== -1 && idxA !== idxB) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+                return (a.def.name || "").localeCompare(b.def.name || "");
+            });
 
-                // Merge Standard Values (Rule for Empty applies to Specific)
-                Object.entries(emptyMethodRow.stdValues).forEach(([profileId, rule]) => {
-                    if (!specific.stdValues[profileId]) {
-                        specific.stdValues[profileId] = rule;
-                    }
-                });
+        if (rows.length === 0) return null;
 
-                // Merge Spec Values
-                Object.entries(emptyMethodRow.specValues).forEach(([specId, val]) => {
-                    if (!specific.specValues[specId]) {
-                        specific.specValues[specId] = val;
-                    }
-                });
-
-                // Merge Unit (if specific missing)
-                if (!specific.unit && emptyMethodRow.unit) specific.unit = emptyMethodRow.unit;
-
-                // Push only specific
-                finalRows.push(specific);
-            } else {
-                // Keep all
-                groupRows.forEach(r => finalRows.push(r));
-            }
-        });
-
-        return finalRows.sort((a, b) => {
-            // 1. Sort by Category
-            const catA = globalProperties.find(p => p.name === a.name)?.category || 'other';
-            const catB = globalProperties.find(p => p.name === b.name)?.category || 'other';
-
-            const idxA = CATEGORY_ORDER.indexOf(catA.toLowerCase());
-            const idxB = CATEGORY_ORDER.indexOf(catB.toLowerCase());
-
-            if (idxA !== -1 && idxB !== -1) {
-                if (idxA !== idxB) return idxA - idxB;
-            } else if (idxA !== -1) return -1;
-            else if (idxB !== -1) return 1;
-
-            const nameCompare = a.name.localeCompare(b.name);
-            if (nameCompare !== 0) return nameCompare;
-            return a.method.localeCompare(b.method);
-        });
-    }, [assignedProfiles, materialSpecs, material.properties, globalProperties, visibleColumnIds, statsMap]);
-
-    // Columns Definition for UI
-    const visibleProfiles = assignedProfiles.filter(p => visibleColumnIds.includes(p.id));
-    const visibleSpecs = materialSpecs.filter(s => visibleColumnIds.includes(s.id));
-
-    // 4. Return UI Structure (Filter Bar + Table Header)
-    return (
-        <div className="flex h-full flex-col gap-4">
-            {/* Toolbar */}
-            <div className="flex items-center justify-between gap-4 p-1 border-b pb-4 shrink-0">
-                <div className="flex items-center gap-2">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-8">
-                                <Columns className="mr-2 h-4 w-4" /> Attributes & Specs
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-[300px]">
-                            <DropdownMenuLabel>Visible Specs & Standards</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {assignedProfiles.length > 0 && (
-                                <>
-                                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Standards</div>
-                                    {assignedProfiles.map(p => (
-                                        <DropdownMenuCheckboxItem
-                                            key={p.id}
-                                            checked={visibleColumnIds.includes(p.id)}
-                                            onCheckedChange={(checked) => {
-                                                setVisibleColumnIds(prev =>
-                                                    checked ? [...prev, p.id] : prev.filter(id => id !== p.id)
-                                                );
-                                            }}
-                                        >
-                                            <span className="truncate">{p.name}</span>
-                                        </DropdownMenuCheckboxItem>
-                                    ))}
-                                    <DropdownMenuSeparator />
-                                </>
-                            )}
-                            {materialSpecs.length > 0 && (
-                                <>
-                                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Specifications</div>
-                                    {materialSpecs.map(s => (
-                                        <DropdownMenuCheckboxItem
-                                            key={s.id}
-                                            checked={visibleColumnIds.includes(s.id)}
-                                            onCheckedChange={(checked) => {
-                                                setVisibleColumnIds(prev =>
-                                                    checked ? [...prev, s.id] : prev.filter(id => id !== s.id)
-                                                );
-                                            }}
-                                        >
-                                            <div className="flex flex-col">
-                                                <span className="font-medium">{s.code || s.name}</span>
-                                                {s.code && s.name && <span className="text-xs text-muted-foreground">{s.name}</span>}
-                                            </div>
-                                        </DropdownMenuCheckboxItem>
-                                    ))}
-                                </>
-                            )}
-                            {assignedProfiles.length === 0 && materialSpecs.length === 0 && (
-                                <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                                    No data attributes found.
-                                </div>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <div className="h-6 w-px bg-border mx-2" />
-
-                    {/* Test Data Filters */}
+        return (
+            <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between py-2 px-3 rounded-md font-semibold text-sm bg-slate-100">
                     <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-muted-foreground">Test Data:</span>
-                        <Select value={timeFilter} onValueChange={setTimeFilter}>
-                            <SelectTrigger className="w-[130px] h-8 text-xs">
-                                <SelectValue placeholder="Time Period" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Time</SelectItem>
-                                <SelectItem value="1m">Last Month</SelectItem>
-                                <SelectItem value="6m">Last 6 Months</SelectItem>
-                                <SelectItem value="1y">Last Year</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <span className="text-xs text-muted-foreground">or</span>
-                        <Select value={limitFilter} onValueChange={setLimitFilter}>
-                            <SelectTrigger className="w-[130px] h-8 text-xs">
-                                <SelectValue placeholder="Count Limit" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Measurements</SelectItem>
-                                <SelectItem value="5">Last 5</SelectItem>
-                                <SelectItem value="10">Last 10</SelectItem>
-                                <SelectItem value="25">Last 25</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <FileText className="h-4 w-4" />
+                        Base Material Properties
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {/* Data Basis Filter */}
+                        <div className="flex items-center gap-2 mr-4">
+                            <Filter className="h-3 w-3 text-muted-foreground" />
+                            <Select
+                                value={measurementFilter.type === 'all' ? 'all' : `${measurementFilter.type}-${measurementFilter.value}`}
+                                onValueChange={(val) => {
+                                    if (val === 'all') setMeasurementFilter({ type: 'all', value: 0 });
+                                    else if (val.startsWith('last_n-')) setMeasurementFilter({ type: 'last_n', value: Number(val.split('-')[1]) });
+                                    else if (val.startsWith('time-')) setMeasurementFilter({ type: 'time', value: val.split('-')[1] });
+                                }}
+                            >
+                                <SelectTrigger className="h-7 w-[160px] text-xs">
+                                    <SelectValue placeholder="Data Basis" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Measurements</SelectItem>
+                                    <SelectItem value="last_n-5">Last 5 Measured</SelectItem>
+                                    <SelectItem value="last_n-10">Last 10 Measured</SelectItem>
+                                    <SelectItem value="time-6m">Last 6 Months</SelectItem>
+                                    <SelectItem value="time-1y">Last 1 Year</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {/* Standard Selector */}
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                                    <Settings2 className="h-3 w-3" />
+                                    Columns
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-[200px] p-3">
+                                <div className="flex flex-col gap-2">
+                                    <span className="font-semibold text-xs border-b pb-1 mb-1">Standards & Specs</span>
+                                    {availableProfiles.map((profile) => (
+                                        <div key={profile.id} className="flex items-center gap-2">
+                                            <Checkbox
+                                                id={`chk-${profile.id}`}
+                                                checked={selectedStandardIds.includes(profile.id)}
+                                                onCheckedChange={(checked) => {
+                                                    if (checked) setSelectedStandardIds([...selectedStandardIds, profile.id]);
+                                                    else setSelectedStandardIds(selectedStandardIds.filter(id => id !== profile.id));
+                                                }}
+                                            />
+                                            <Label htmlFor={`chk-${profile.id}`} className="text-xs truncate" title={profile.name}>{profile.name}</Label>
+                                        </div>
+                                    ))}
+                                    {/* Deduplicate specs just in case */}
+                                    {Array.from(new Set(materialSpecs.map(s => s.id))).map(sid => {
+                                        const spec = materialSpecs.find(s => s.id === sid);
+                                        if (!spec) return null;
+                                        return (
+                                            <div key={spec.id} className="flex items-center gap-2">
+                                                <Checkbox
+                                                    id={`chk-${spec.id}`}
+                                                    checked={selectedStandardIds.includes(spec.id)}
+                                                    onCheckedChange={(checked) => {
+                                                        if (checked) setSelectedStandardIds([...selectedStandardIds, spec.id]);
+                                                        else setSelectedStandardIds(selectedStandardIds.filter(id => id !== spec.id));
+                                                    }}
+                                                />
+                                                <Label htmlFor={`chk-${spec.id}`} className="text-xs text-purple-700 truncate" title={spec.name}>Spec: {spec.name}</Label>
+                                            </div>
+                                        );
+                                    })}
+                                    {(activeProfiles.length === 0 && materialSpecs.length === 0) && (
+                                        <span className="text-xs text-muted-foreground italic">No Active Standards</span>
+                                    )}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                     </div>
                 </div>
+                <div className="border rounded-md bg-card overflow-hidden">
+                    <Table>
+                        <TableHeader className="bg-muted/10">
+                            <TableRow>
+                                <TableHead className="w-[250px]">Property</TableHead>
+                                <TableHead className="w-[120px]">Method</TableHead>
+                                <TableHead className="w-[80px]">Unit</TableHead>
+                                {visibleProfiles.map((profile) => (
+                                    <TableHead key={profile.id} className="w-[120px] text-center">{profile.name}</TableHead>
+                                ))}
+                                {/* Render Individual Specification Columns */}
+                                {visibleSpecs.length > 0 && visibleSpecs.map(spec => (
+                                    <TableHead key={spec.id} className="w-[120px] text-center text-purple-700 font-bold bg-purple-50/20">
+                                        {spec.name}
+                                    </TableHead>
+                                ))}
+                                <TableHead className="w-[120px] text-center">Actual ({measurementFilter.type === 'all' ? 'All' : measurementFilter.type === 'last_n' ? `Last ${measurementFilter.value}` : measurementFilter.value})</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {rows.map((row) => (
+                                <TableRow key={row.def.id}>
+                                    <TableCell>
+                                        <span className="font-medium">{row.def.name}</span>
+                                    </TableCell>
+                                    <TableCell>
+                                        <span className="text-xs text-muted-foreground">{row.firstRule?.method || row.cell.manual?.method || "-"}</span>
+                                    </TableCell>
+                                    <TableCell>
+                                        <span className="text-xs text-muted-foreground">{row.firstRule?.unit || row.cell.manual?.unit || row.def.unit || "-"}</span>
+                                    </TableCell>
 
-                <div className="flex items-center gap-2">
+                                    {/* Per-Profile Standard Values */}
+                                    {visibleProfiles.map((profile) => {
+                                        const rule = row.profileCells[profile.id];
+                                        return (
+                                            <TableCell key={profile.id} className="text-center">
+                                                {rule ? (
+                                                    <div className="flex flex-col items-center text-xs">
+                                                        {(rule.min !== undefined || rule.max !== undefined) && (
+                                                            <span className="font-medium">{rule.min ?? '?'} - {rule.max ?? '?'}</span>
+                                                        )}
+                                                        {rule.target !== undefined && (
+                                                            <span className="font-medium text-blue-600 font-bold">{rule.target}</span> // Display Value Only
+                                                        )}
+                                                        {(rule.min === undefined && rule.max === undefined && rule.target === undefined) && (
+                                                            <span>-</span>
+                                                        )}
+                                                    </div>
+                                                ) : <span className="text-muted-foreground/20">-</span>}
+                                            </TableCell>
+                                        );
+                                    })}
+
+                                    {/* Per-Specification Values */}
+                                    {visibleSpecs.map(spec => {
+                                        const prop = row.cell.specs[spec.id];
+                                        return (
+                                            <TableCell key={spec.id} className="text-center">
+                                                {prop ? (
+                                                    <div className="flex flex-col items-center text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
+                                                        <span className="font-medium">{prop.value}</span>
+                                                        {/* <span className="text-[9px] opacity-70">{prop.unit}</span> Unit is redundant if in dedicated column or row, but good for safety */}
+                                                    </div>
+                                                ) : <span className="text-muted-foreground/30">-</span>}
+                                            </TableCell>
+                                        );
+                                    })}
+
+                                    <TableCell className="text-center">
+                                        {renderActualCell(row.cell)}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
                 </div>
             </div>
+        );
 
-            {/* Matrix View */}
-            <Card className="flex-1 border-none shadow-none bg-transparent overflow-hidden flex flex-col">
-                <div className="border rounded-md bg-card overflow-hidden flex flex-col flex-1 relative">
-                    <div className="h-full overflow-auto">
-                        <Table>
-                            <TableHeader className="sticky top-0 bg-background z-20 shadow-sm">
-                                <TableRow>
-                                    <TableHead className="w-[20px] bg-background"></TableHead>
-                                    <TableHead className="w-[200px] bg-background font-bold">Property</TableHead>
-                                    <TableHead className="w-[150px] bg-background font-bold border-r">Method</TableHead>
+    };
 
-                                    {/* Profiles (Standards) */}
-                                    {visibleProfiles.map(p => (
-                                        <TableHead key={p.id} className="min-w-[180px] border-l bg-blue-50/50 text-center relative group">
-                                            <div className="flex flex-col items-center py-2">
-                                                <Badge variant="secondary" className="mb-1 text-[10px] bg-blue-100/50 text-blue-700 hover:bg-blue-100 border-none px-1 py-0 h-4">STANDARD</Badge>
-                                                <span className="truncate w-full block font-semibold text-blue-900">{p.name}</span>
-                                            </div>
-                                        </TableHead>
-                                    ))}
 
-                                    {/* Specifications */}
-                                    {visibleSpecs.map(s => (
-                                        <TableHead key={s.id} className="min-w-[150px] border-l bg-purple-50/50 text-center relative group">
-                                            <div className="flex flex-col items-center py-2">
-                                                <Badge variant="secondary" className="mb-1 text-[10px] bg-purple-100/50 text-purple-700 hover:bg-purple-100 border-none px-1 py-0 h-4">SPEC</Badge>
-                                                <span className="truncate w-full block font-semibold text-purple-900">{s.code || s.name}</span>
-                                                {s.code && s.name && <span className="truncate w-full block text-[10px] text-purple-700/70 font-normal">{s.name}</span>}
-                                            </div>
-                                        </TableHead>
-                                    ))}
+    // SECTION 2: Reference Layup Properties
+    const renderLayupProperties = () => {
+        if (definedArchitectures.length === 0) return null;
 
-                                    <TableHead className="min-w-[150px] border-l bg-green-50/50 text-center">
-                                        Tests (Actual)
-                                    </TableHead>
-                                    <TableHead className="w-[20px] bg-background"></TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {matrixRows.length === 0 && (
-                                    <TableRow>
-                                        <TableCell colSpan={5 + visibleProfiles.length + visibleSpecs.length} className="text-center h-40 text-muted-foreground">
-                                            No properties to display. Add specifications or assigns standards to see comparison.
-                                        </TableCell>
-                                    </TableRow>
+        // Filter specs for the Table (Columns) based on selection
+        // Identical to renderBaseProperties to ensure consistency
+        const visibleSpecs = materialSpecs.filter(spec => selectedStandardIds.includes(spec.id));
+
+        return (
+            <div className="flex flex-col gap-4">
+                {definedArchitectures.map(arch => {
+                    const matchingContexts = contexts.filter(ctx =>
+                        ctx.type === 'layup' && ctx.obj && ctx.obj.architectureTypeId === arch.id
+                    );
+
+                    // Map Arch Rules per Profile
+                    const ruleMap = new Map<string, Map<string, RequirementRule>>(); // PropertyId -> ProfileId -> Rule
+                    activeProfiles.forEach(({ profile }) => {
+                        profile.rules.forEach(r => {
+                            if (r.scope === 'layup' && r.referenceArchitectureId === arch.id) {
+                                if (!ruleMap.has(r.propertyId)) ruleMap.set(r.propertyId, new Map());
+                                ruleMap.get(r.propertyId)!.set(profile.id, r);
+                            }
+                        });
+                    });
+
+                    // Filter profiles that have rules for THIS architecture
+                    const relevantProfilesRaw = activeProfiles.filter(({ profile }) =>
+                        selectedStandardIds.includes(profile.id) &&
+                        profile.rules.some(r => r.scope === 'layup' && r.referenceArchitectureId === arch.id)
+                    );
+
+                    // Deduplicate profiles (A profile might be active via multiple contexts, but we only want one column)
+                    const relevantProfiles = Array.from(
+                        new Map(relevantProfilesRaw.map(item => [item.profile.id, item])).values()
+                    );
+
+                    const profileNames = relevantProfiles.map(p => p.profile.name).join(', ');
+                    const headerText = `${arch.name}${profileNames ? ` - ${profileNames}` : ''}`;
+
+                    // Collect all properties: Rules + Manual + Specs
+                    const propIds = new Set(ruleMap.keys());
+
+                    // Add property definition IDs from manual properties/contexts
+                    matchingContexts.forEach(ctx => {
+                        if (ctx.obj && ctx.obj.properties) {
+                            const props = Array.isArray(ctx.obj.properties) ? ctx.obj.properties : Object.values(ctx.obj.properties);
+                            props.forEach((p: any) => {
+                                const def = globalProperties.find(gp => gp.name === p.name);
+                                if (def) propIds.add(def.id);
+                            });
+                        }
+                    });
+
+
+                    const sortedPropIds = Array.from(propIds).sort((a, b) => {
+                        const defA = globalProperties.find(gp => gp.id === a);
+                        const defB = globalProperties.find(gp => gp.id === b);
+                        return (defA?.name || "").localeCompare(defB?.name || "");
+                    });
+
+                    if (sortedPropIds.length === 0 && matchingContexts.length === 0) return null;
+
+                    return (
+                        <div key={arch.id} className="flex flex-col gap-2">
+                            <div className="py-2 px-3 rounded-md font-semibold text-sm bg-blue-50/50 border border-blue-100 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Layers className="h-4 w-4 text-blue-600" />
+                                    <span>{headerText}</span>
+                                    <span className="font-normal text-muted-foreground ml-2 text-xs">({arch.description})</span>
+                                </div>
+                                {matchingContexts.length === 0 && (
+                                    <div className="text-amber-600 text-xs flex items-center gap-1">
+                                        <AlertCircle className="h-3 w-3" /> No Linked Layup
+                                    </div>
                                 )}
-                                {matrixRows.map((row) => {
-                                    const stats = statsMap.get(row.id);
-                                    return (
-                                        <TableRow key={row.id} className="hover:bg-muted/30">
-                                            <TableCell></TableCell>
-                                            <TableCell className="font-medium align-top py-4">
-                                                <div className="flex flex-col">
-                                                    <span>{row.name}</span>
-                                                    <span className="text-xs text-muted-foreground mt-0.5">{row.unit}</span>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="align-top py-4 border-r">
-                                                {row.method ? (
-                                                    <span className="font-mono text-sm text-muted-foreground">{row.method}</span>
-                                                ) : (
-                                                    <span className="text-xs text-muted-foreground/30">-</span>
-                                                )}
-                                            </TableCell>
+                            </div>
 
-                                            {/* Standard Values */}
-                                            {visibleProfiles.map(p => {
-                                                const rule = row.stdValues[p.id];
-                                                // Determine "Main Value" (Target > Min/Max range)
-                                                // If Target exists, show it big. Else if Min/Max exist, show them as range.
-                                                return (
-                                                    <TableCell key={p.id} className="border-l p-2 align-middle text-center bg-blue-50/20">
-                                                        {rule ? (
-                                                            <div className="flex flex-col items-center justify-center gap-0.5">
-                                                                {rule.target !== undefined && (
-                                                                    <span className="font-bold text-base text-blue-900">{rule.target}</span>
-                                                                )}
+                            <div className="border rounded-md bg-card overflow-hidden">
+                                <Table>
+                                    <TableHeader className="bg-muted/10">
+                                        <TableRow>
+                                            <TableHead className="w-[250px]">Property</TableHead>
+                                            <TableHead className="w-[120px]">Method</TableHead>
+                                            <TableHead className="w-[80px]">Unit</TableHead>
 
-                                                                {(rule.min !== undefined || rule.max !== undefined) && (
-                                                                    <div className="text-[11px] text-muted-foreground font-mono px-1">
-                                                                        {rule.min ?? '*'} - {rule.max ?? '*'}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        ) : <span className="text-muted-foreground/20 text-xs">-</span>}
-                                                    </TableCell>
-                                                )
-                                            })}
+                                            {/* Profile Columns (Specific to this Arch) */}
+                                            {relevantProfiles.map(({ profile }) => (
+                                                <TableHead key={profile.id} className="w-[120px] text-center">{profile.name}</TableHead>
+                                            ))}
 
-                                            {/* Spec Values */}
-                                            {visibleSpecs.map(s => {
-                                                const prop = row.specValues[s.id];
-                                                return (
-                                                    <TableCell key={s.id} className="border-l p-2 align-middle text-center bg-purple-50/20 group relative">
-                                                        {prop ? (
-                                                            <div className="flex flex-col items-center gap-0.5 group/cell">
-                                                                <span className="font-bold text-base text-purple-900">{prop.value}</span>
-                                                                {/* Method removed here as it is now in the row header */}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="h-full w-full flex items-center justify-center opacity-0 transition-opacity">
-                                                                <span className="text-muted-foreground/20 text-xs">-</span>
-                                                            </div>
-                                                        )}
-                                                    </TableCell>
-                                                )
-                                            })}
+                                            {/* Specification Columns (Consistent with Base) */}
+                                            {visibleSpecs.map(spec => (
+                                                <TableHead key={spec.id} className="w-[120px] text-center text-purple-700">{spec.name}</TableHead>
+                                            ))}
 
-                                            {/* Test Stats */}
-                                            <TableCell className="border-l bg-green-50/20 p-2 align-middle text-center">
-                                                {stats ? (
-                                                    <div className="flex flex-col items-center justify-center gap-0.5">
-                                                        <span className="font-bold text-base text-green-900">{stats.mean.toFixed(2)}</span>
-                                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/80">
-                                                            <div className="font-mono px-1">
-                                                                {stats.min.toFixed(1)} - {stats.max.toFixed(1)}
-                                                            </div>
-                                                            <span>(n={stats.count})</span>
-                                                        </div>
-                                                    </div>
-                                                ) : <span className="text-muted-foreground/20 text-xs">-</span>}
-                                            </TableCell>
-                                            <TableCell></TableCell>
+                                            {matchingContexts.map(ctx => (
+                                                <TableHead key={ctx.id} className="w-[120px] text-center text-blue-700">
+                                                    {ctx.obj?.name || "Actual"}
+                                                </TableHead>
+                                            ))}
+                                            {matchingContexts.length === 0 && <TableHead className="w-[120px] text-center text-muted-foreground">Actual ({measurementFilter.type === 'all' ? 'All' : measurementFilter.value})</TableHead>}
                                         </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
-            </Card>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {sortedPropIds.map(pid => {
+                                            const def = globalProperties.find(gp => gp.id === pid);
+                                            if (!def) return null;
+
+                                            const profileRules = ruleMap.get(pid)!;
+                                            const firstRule = profileRules ? Array.from(profileRules.values())[0] : undefined;
+
+                                            return (
+                                                <TableRow key={pid}>
+                                                    <TableCell>
+                                                        <span className="font-medium">{def.name}</span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span className="text-xs text-muted-foreground">{firstRule?.method || "-"}</span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span className="text-xs text-muted-foreground">{firstRule?.unit || def.unit || "-"}</span>
+                                                    </TableCell>
+
+                                                    {/* Profile Values */}
+                                                    {relevantProfiles.map(({ profile }) => {
+                                                        const rule = profileRules ? profileRules.get(profile.id) : undefined;
+
+                                                        return (
+                                                            <TableCell key={profile.id} className="text-center">
+                                                                {rule ? (
+                                                                    <div className="flex flex-col items-center text-xs">
+                                                                        {(rule.min !== undefined || rule.max !== undefined) && (
+                                                                            <span className="font-medium">{rule.min ?? '?'} - {rule.max ?? '?'}</span>
+                                                                        )}
+                                                                        {rule.target !== undefined && (
+                                                                            <span className="font-medium text-blue-600 font-bold">{rule.target}</span>
+                                                                        )}
+                                                                        {(rule.min === undefined && rule.max === undefined && rule.target === undefined) && (
+                                                                            <span>-</span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : <span className="text-muted-foreground/20">-</span>}
+                                                            </TableCell>
+                                                        );
+                                                    })}
+
+                                                    {/* Per-Specification Values */}
+                                                    {visibleSpecs.map(spec => {
+                                                        // We need to build a cell here or just look up the property.
+                                                        // Since 'renderActualCell' logic is not needed for Specs (simple lookup), we can just find it.
+                                                        // But wait, buildRowData does it. Let's use it for consistency?
+                                                        // buildRowData takes a contextId.
+                                                        // Spec lookup in buildRowData is independent of contextId NOW.
+                                                        // But we just need the value.
+                                                        const props = Array.isArray(spec.properties) ? spec.properties : Object.values(spec.properties || {});
+                                                        const match = props.find((p: any) => p.name === def.name);
+
+                                                        return (
+                                                            <TableCell key={spec.id} className="text-center">
+                                                                {match ? (
+                                                                    <div className="flex flex-col items-center text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
+                                                                        <span className="font-medium">{match.value}</span>
+                                                                    </div>
+                                                                ) : <span className="text-muted-foreground/30">-</span>}
+                                                            </TableCell>
+                                                        );
+                                                    })}
+
+                                                    {matchingContexts.length > 0 ? matchingContexts.map(ctx => {
+                                                        const cell = buildRowData(firstRule || null, def, ctx.id);
+                                                        return (
+                                                            <TableCell key={ctx.id} className="text-center">
+                                                                {renderActualCell(cell)}
+                                                            </TableCell>
+                                                        );
+                                                    }) : (
+                                                        <TableCell className="text-center text-muted-foreground/30">-</TableCell>
+                                                    )}
+
+                                                </TableRow>
+                                            );
+                                        })}
+                                        {sortedPropIds.length === 0 && (
+                                            <TableRow>
+                                                <TableCell colSpan={4 + relevantProfiles.length + visibleSpecs.length + (matchingContexts.length || 1)} className="text-center py-4 text-muted-foreground italic">
+                                                    No rules defined for this architecture type.
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
+    return (
+        <div className="flex h-full flex-col gap-6 overflow-auto pb-12">
+            {renderBaseProperties()}
+            {renderLayupProperties()}
         </div>
     );
 }

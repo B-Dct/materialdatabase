@@ -141,7 +141,7 @@ export function AssemblyListPage() {
                     <p className="text-muted-foreground">Manage complex assemblies composed of multiple layups.</p>
                 </div>
 
-                <Button onClick={() => navigate('/assemblies/new')}><Plus className="mr-2 h-4 w-4" /> Create Assembly</Button>
+                <Button onClick={() => navigate('/assemblies/new')}><Plus className="mr-2 h-4 w-4" /> Add Assembly</Button>
             </div>
 
             <div className="flex-1 overflow-hidden border rounded-md p-4">

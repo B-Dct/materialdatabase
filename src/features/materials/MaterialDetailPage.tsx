@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutGrid, Box, FileText, ArrowLeft, Pencil, Save, X as XIcon, Trash2, Archive } from 'lucide-react';
+import { LayoutGrid, Box, FileText, ArrowLeft, Pencil, Save, X as XIcon, Trash2, Archive, Layers } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MaterialPropertiesView } from './MaterialPropertiesView';
 import { MaterialSpecifications } from './MaterialSpecifications';
@@ -19,17 +20,8 @@ import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
 import { HistoryLog } from '@/features/shared/HistoryLog';
 import { Ruler, Award, CheckCircle, Copy, Network } from 'lucide-react'; // Ensure imports are consolidated
 import type { Material } from '@/types/domain';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { EntityDeleteDialog } from '@/components/common/EntityDeleteDialog';
+
 
 export function MaterialDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -40,27 +32,35 @@ export function MaterialDetailPage() {
         measurements,
         fetchMeasurements,
         fetchSpecifications,
+        fetchSpecificationsForEntities,
         updateMaterial,
         deleteMaterial,
         fetchProperties,
+        fetchLayups,
+        fetchAssemblies,
         isLoading
     } = useAppStore();
 
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState<Partial<Material>>({});
-    const [error, setError] = useState<string | null>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
 
     // Initial load
     useEffect(() => {
-        // Always fetch if empty, or maybe stale? 
-        // For now, if empty is good check.
         if (materials.length === 0) fetchMaterials();
+
+        // Fetch Contexts (Layups/Assemblies) for Reference Views
+        fetchLayups();
+        fetchAssemblies();
 
         // Also fetch related data
         fetchMeasurements();
         fetchProperties();
         if (id) fetchSpecifications(id, 'material');
-    }, [id, materials.length, fetchMaterials, fetchMeasurements, fetchSpecifications, fetchProperties]);
+    }, [id, materials.length, fetchMaterials, fetchMeasurements, fetchSpecifications, fetchProperties, fetchLayups, fetchAssemblies]);
+
+
 
     const material = materials.find(m => m.id === id);
 
@@ -68,7 +68,24 @@ export function MaterialDetailPage() {
         if (material && !isEditing) {
             setFormData(material);
         }
-    }, [material, isEditing]);
+
+        if (material) {
+            const entities: { id: string, type: 'material' | 'layup' | 'assembly' }[] = [];
+            entities.push({ id: material.id, type: 'material' });
+
+            (material.assignedReferenceLayupIds || []).forEach(refId => {
+                entities.push({ id: refId, type: 'layup' });
+            });
+
+            (material.assignedReferenceAssemblyIds || []).forEach(refId => {
+                entities.push({ id: refId, type: 'assembly' });
+            });
+
+            if (entities.length > 0 && fetchSpecificationsForEntities) {
+                fetchSpecificationsForEntities(entities);
+            }
+        }
+    }, [material, isEditing, fetchSpecificationsForEntities]);
 
     if (isLoading && !material) {
         return (
@@ -121,16 +138,13 @@ export function MaterialDetailPage() {
     const handleDelete = async () => {
         if (!material.id) return;
         try {
-            setError(null);
             await deleteMaterial(material.id);
+            setDeleteDialogOpen(false);
             navigate('/materials');
         } catch (e: any) {
             const msg = e.message || "Failed to delete material";
-            if (msg.includes("Cannot delete material: Used in")) {
-                setError(msg + "\n\nTip: You can set the status to 'Obsolete' to archive it instead.");
-            } else {
-                setError(msg);
-            }
+            toast.error(msg);
+            setDeleteDialogOpen(false);
         }
     };
 
@@ -155,7 +169,23 @@ export function MaterialDetailPage() {
             }
         }
     };
-    const handleChange = (field: keyof Material, value: any) => {
+    const handleChange = async (field: keyof Material, value: any) => {
+        if (field === 'status') {
+            const { validateStatusTransition } = await import('@/lib/integrity-utils');
+            const relevantSpecs = useAppStore.getState().specifications.filter(s => s.materialId === material.id);
+            const relevantMeasurements = measurements.filter(m => m.materialId === material.id);
+
+            const result = validateStatusTransition(material.status, value, {
+                hasMeasurements: relevantMeasurements.length > 0,
+                hasDocuments: relevantSpecs.length > 0,
+                isUsedInactiveProject: false // TODO: Check generic usage
+            });
+
+            if (!result.allowed) {
+                toast.error(result.reason || "Status transition not allowed");
+                return;
+            }
+        }
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
@@ -187,42 +217,26 @@ export function MaterialDetailPage() {
                         </div>
                     )}
                 </div>
+
                 <div className="flex items-center gap-2">
+
                     {isEditing ? (
                         <>
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" size="sm">
-                                        <Trash2 className="h-4 w-4 mr-2" /> Delete
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the material
-                                            <strong> {material.name}</strong> and all associated data.
-                                        </AlertDialogDescription>
-                                        {error && (
-                                            <div className="mt-2 p-3 bg-red-100 border border-red-200 text-red-700 rounded text-sm whitespace-pre-wrap">
-                                                {error}
-                                            </div>
-                                        )}
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={() => setError(null)}>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                handleDelete();
-                                            }}
-                                            className="bg-destructive hover:bg-destructive/90"
-                                        >
-                                            Delete Material
-                                        </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setDeleteDialogOpen(true)}
+                            >
+                                <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </Button>
+
+                            <EntityDeleteDialog
+                                open={deleteDialogOpen}
+                                onOpenChange={setDeleteDialogOpen}
+                                entityName={material.name}
+                                entityType="Material"
+                                onConfirm={handleDelete}
+                            />
 
                             {/* Archive Button */}
                             {formData.status !== 'obsolete' && (
@@ -272,6 +286,7 @@ export function MaterialDetailPage() {
                         <TabsTrigger value="specifications" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                             <FileText className="h-4 w-4 mr-2" /> Specifications
                         </TabsTrigger>
+
                         <TabsTrigger value="measurements" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                             <Ruler className="h-4 w-4 mr-2" /> Measurements
                         </TabsTrigger>
@@ -452,23 +467,93 @@ export function MaterialDetailPage() {
                             </Card>
                         </div>
 
-                        {/* Description Section */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Description</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                {isEditing ? (
-                                    <Textarea
-                                        value={formData.description || ''}
-                                        onChange={(e) => handleChange('description', e.target.value)}
-                                        className="min-h-[100px]"
-                                    />
-                                ) : (
-                                    <p className="text-sm whitespace-pre-wrap">{material.description || "No description provided."}</p>
-                                )}
-                            </CardContent>
-                        </Card>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Reference Context Column */}
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <CardTitle>Reference Context (Engineering)</CardTitle>
+                                        {isEditing && (
+                                            <div className="flex gap-2">
+                                                {/* Add Layup Button */}
+                                                <Select
+                                                    onValueChange={(val) => {
+                                                        const current = formData.assignedReferenceLayupIds || [];
+                                                        if (!current.includes(val)) {
+                                                            handleChange('assignedReferenceLayupIds', [...current, val]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <SelectTrigger className="h-7 w-[130px] text-xs">
+                                                        <SelectValue placeholder="+ Add Layup" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {useAppStore.getState().layups
+                                                            .filter(l => l.isReference)
+                                                            .filter(l => !(formData.assignedReferenceLayupIds || []).includes(l.id))
+                                                            .map(l => (
+                                                                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                                                            ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium text-muted-foreground block">Assigned Reference Layups</span>
+                                        {(formData.assignedReferenceLayupIds || material.assignedReferenceLayupIds || []).length > 0 ? (
+                                            <div className="flex flex-wrap gap-2">
+                                                {(formData.assignedReferenceLayupIds || material.assignedReferenceLayupIds || []).map(refId => {
+                                                    const layup = useAppStore.getState().layups.find(l => l.id === refId);
+                                                    if (!layup) return null;
+                                                    return (
+                                                        <Badge key={refId} variant="secondary" className="flex items-center gap-1 pr-1">
+                                                            <Layers className="h-3 w-3 mr-1" />
+                                                            {layup.name}
+                                                            {isEditing && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-4 w-4 ml-1 hover:bg-destructive/20 hover:text-destructive rounded-full"
+                                                                    onClick={() => {
+                                                                        const current = formData.assignedReferenceLayupIds || [];
+                                                                        handleChange('assignedReferenceLayupIds', current.filter(id => id !== refId));
+                                                                    }}
+                                                                >
+                                                                    <XIcon className="h-3 w-3" />
+                                                                </Button>
+                                                            )}
+                                                        </Badge>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm text-muted-foreground italic">No Reference Layups assigned.</span>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Description Section */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Description</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {isEditing ? (
+                                        <Textarea
+                                            value={formData.description || ''}
+                                            onChange={(e) => handleChange('description', e.target.value)}
+                                            className="min-h-[100px]"
+                                        />
+                                    ) : (
+                                        <p className="text-sm whitespace-pre-wrap">{material.description || "No description provided."}</p>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
 
                         {/* History Log */}
                         <div className="h-[400px]">
@@ -505,13 +590,6 @@ export function MaterialDetailPage() {
                         <MaterialSpecifications material={material} />
                     </TabsContent>
 
-                    <TabsContent value="measurements">
-                        <MeasurementEntry
-                            parentId={material.id}
-                            parentType="material"
-                        />
-                    </TabsContent>
-
                     <TabsContent value="standards">
                         <EntityStandardsManager
                             assignedProfileIds={material.assignedProfileIds || []}
@@ -523,6 +601,13 @@ export function MaterialDetailPage() {
                                 const currentIds = material.assignedProfileIds || [];
                                 await updateMaterial(material.id, { assignedProfileIds: currentIds.filter(pid => pid !== id) });
                             }}
+                        />
+                    </TabsContent>
+
+                    <TabsContent value="measurements">
+                        <MeasurementEntry
+                            parentId={material.id}
+                            parentType="material"
                         />
                     </TabsContent>
 
@@ -540,7 +625,7 @@ export function MaterialDetailPage() {
                         <MaterialUsage material={material} />
                     </TabsContent>
                 </div>
-            </Tabs>
-        </div>
+            </Tabs >
+        </div >
     );
 }
