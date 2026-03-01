@@ -11,7 +11,18 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableSkeleton } from '@/components/ui/table-skeleton';
@@ -21,6 +32,8 @@ export const ProjectsPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [projectToDelete, setProjectToDelete] = useState<{ id: string, name: string } | null>(null);
 
     useEffect(() => {
         const load = async () => {
@@ -36,9 +49,20 @@ export const ProjectsPage = () => {
         p.projectNumber.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const handleDelete = async (id: string) => {
-        if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-            await deleteProject(id);
+    const confirmDelete = async () => {
+        if (!projectToDelete) return;
+        try {
+            await deleteProject(projectToDelete.id);
+            setDeleteDialogOpen(false);
+            setProjectToDelete(null);
+            toast.success("Project deleted successfully");
+        } catch (e: any) {
+            console.error("Failed to delete project:", e);
+            toast.error(e.message || "Failed to delete project", {
+                duration: 10000,
+                description: "The project might contain materials, layups, or test requests and cannot be deleted.",
+            });
+            setDeleteDialogOpen(false);
         }
     };
 
@@ -115,7 +139,10 @@ export const ProjectsPage = () => {
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                onClick={() => handleDelete(project.id)}
+                                                onClick={() => {
+                                                    setProjectToDelete({ id: project.id, name: project.name });
+                                                    setDeleteDialogOpen(true);
+                                                }}
                                                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                                 title="Delete Project"
                                             >
@@ -131,6 +158,24 @@ export const ProjectsPage = () => {
             </div>
 
             <CreateProjectDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
+
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete the project <span className="font-semibold text-foreground">{projectToDelete?.name}</span>?
+                            This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setProjectToDelete(null)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 };

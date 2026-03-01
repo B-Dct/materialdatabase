@@ -53,15 +53,17 @@ export function MainLayout() {
                 { href: "/materials", label: "Materials", icon: Atom },
                 { href: "/parts", label: "Standard Parts", icon: Nut },
                 { href: "/standards", label: "Standards", icon: ClipboardList },
+                { href: "/database/properties", label: "Properties", icon: ClipboardList },
             ]
         },
         {
-            title: "Quality & Lab",
+            title: "Lab",
             items: [
-                { href: "/quality/requests", label: "Requests", icon: ClipboardList },
                 { href: "/quality/analysis", label: "Analysis", icon: Activity },
+                { href: "/quality/requests", label: "Requests", icon: ClipboardList },
                 { href: "/quality/measurements", label: "Measurements", icon: FlaskConical },
                 { href: "/quality/test-methods", label: "Test Methods", icon: FlaskConical },
+                { href: "/quality/laboratories", label: "Laboratories", icon: FlaskConical },
             ]
         },
         {

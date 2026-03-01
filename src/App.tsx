@@ -23,6 +23,8 @@ import { CorrelationView } from '@/features/analysis/CorrelationView';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { TestMethodsView } from '@/features/quality/TestMethodsView';
 import { StandardDetailPage } from '@/features/quality/StandardDetailPage';
+import { PropertyListPage } from '@/features/quality/PropertyListPage';
+import { LaboratoryListPage } from '@/features/quality/LaboratoryListPage';
 import StandardPartsPage from '@/features/parts/StandardPartsPage';
 import { ProjectsPage } from '@/features/projects/ProjectsPage';
 import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage';
@@ -57,6 +59,10 @@ function App() {
             <Route path="standards" element={<RequirementProfileListPage />} />
             <Route path="standards/new" element={<StandardDetailPage />} />
             <Route path="standards/:id" element={<StandardDetailPage />} />
+
+            <Route path="database/properties" element={<PropertyListPage />} />
+
+            <Route path="quality/laboratories" element={<LaboratoryListPage />} />
 
             <Route path="quality/measurements" element={<MeasurementsPage />} />
             <Route path="quality/test-run" element={<CreateTestRunPage />} />
