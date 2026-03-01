@@ -1,43 +1,32 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ComparisonView } from "./ComparisonView";
 import { SubstitutionView } from "./SubstitutionView";
 import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ReportExportBtn } from "./ReportExportBtn";
 import { HistoryView } from "./HistoryView";
-import { FileBarChart, Microscope, LayoutGrid, TrendingUp, Plus, X } from "lucide-react";
+import { FileBarChart, Microscope, LayoutGrid, TrendingUp } from "lucide-react";
 
 import { useAppStore } from '@/lib/store';
-import { Button } from '@/components/ui/button';
-import { Badge } from "@/components/ui/badge";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { AnalysisCart } from "./AnalysisCart";
+import { AnalysisFinder } from "./AnalysisFinder";
 
 export function AnalysisDashboard() {
-    const { materials, fetchMaterials } = useAppStore();
-    const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
-    const [addCandidateId, setAddCandidateId] = useState<string>('');
+    const { fetchMaterials, fetchLayups, fetchAssemblies, fetchProcesses, fetchMeasurements, fetchProperties, fetchTestMethods, fetchRequirementProfiles, analysisCart } = useAppStore();
 
     useEffect(() => {
-        fetchMaterials();
-    }, []);
+        fetchMaterials(true);
+        fetchLayups(true);
+        fetchAssemblies();
+        fetchProcesses(true);
+        fetchMeasurements();
+        fetchProperties();
+        fetchTestMethods();
+        fetchRequirementProfiles();
+    }, [fetchMaterials, fetchLayups, fetchAssemblies, fetchProcesses, fetchMeasurements, fetchProperties, fetchTestMethods, fetchRequirementProfiles]);
 
-    const handleAdd = () => {
-        if (addCandidateId && !selectedMaterialIds.includes(addCandidateId)) {
-            if (selectedMaterialIds.length >= 4) return; // Limit to 4
-            setSelectedMaterialIds([...selectedMaterialIds, addCandidateId]);
-            setAddCandidateId('');
-        }
-    };
-
-    const handleRemove = (id: string) => {
-        setSelectedMaterialIds(selectedMaterialIds.filter(m => m !== id));
-    };
+    // Temporary bridge for legacy views until they are rewritten in Phase 2/3
+    const legacyMaterialIds = analysisCart.filter(item => item.type === 'material').map(item => item.id);
 
     return (
         <div className="p-8 space-y-8 animate-in fade-in duration-500">
@@ -49,46 +38,13 @@ export function AnalysisDashboard() {
                 <ReportExportBtn />
             </div>
 
-            {/* Global Selection Bar */}
-            <div className="bg-card border rounded-lg p-4 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-4 flex-1">
-                    <div className="flex items-center gap-2">
-                        <Select value={addCandidateId} onValueChange={setAddCandidateId}>
-                            <SelectTrigger className="w-[250px] bg-background">
-                                <SelectValue placeholder="Add Material to Analyze..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {materials.filter(m => !selectedMaterialIds.includes(m.id)).map(m => (
-                                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Button onClick={handleAdd} disabled={!addCandidateId || selectedMaterialIds.length >= 4} variant="secondary">
-                            <Plus className="h-4 w-4 mr-2" /> Add
-                        </Button>
-                    </div>
-
-                    <div className="h-8 w-px bg-border mx-2" />
-
-                    <div className="flex gap-2 flex-wrap">
-                        {selectedMaterialIds.length === 0 && (
-                            <span className="text-sm text-muted-foreground italic">No materials selected. Add up to 4.</span>
-                        )}
-                        {selectedMaterialIds.map(id => {
-                            const mat = materials.find(m => m.id === id);
-                            return (
-                                <Badge key={id} variant="outline" className="pl-2 pr-1 py-1 h-8 text-sm flex items-center gap-1 bg-background">
-                                    {mat?.name}
-                                    <Button variant="ghost" size="icon" className="h-5 w-5 ml-1 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => handleRemove(id)}>
-                                        <X className="h-3 w-3" />
-                                    </Button>
-                                </Badge>
-                            );
-                        })}
-                    </div>
+            {/* Unified Cart & Finder */}
+            <div className="flex gap-4 items-stretch mb-8">
+                <div className="flex-1">
+                    <AnalysisCart />
                 </div>
-                <div className="text-xs text-muted-foreground">
-                    {selectedMaterialIds.length} / 4 Selected
+                <div className="shrink-0 flex items-stretch">
+                    <AnalysisFinder />
                 </div>
             </div>
 
@@ -109,15 +65,15 @@ export function AnalysisDashboard() {
                 </TabsList>
 
                 <TabsContent value="comparison">
-                    <ComparisonView selectedIds={selectedMaterialIds} />
+                    <ComparisonView cart={analysisCart} />
                 </TabsContent>
 
                 <TabsContent value="analytics">
-                    <AnalyticsCharts selectedIds={selectedMaterialIds} />
+                    <AnalyticsCharts cart={analysisCart} />
                 </TabsContent>
 
                 <TabsContent value="history">
-                    <HistoryView selectedIds={selectedMaterialIds} />
+                    <HistoryView selectedIds={legacyMaterialIds} />
                 </TabsContent>
 
                 <TabsContent value="substitution">

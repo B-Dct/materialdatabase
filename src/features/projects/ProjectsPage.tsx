@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, Eye, Trash2 } from 'lucide-react';
+import { Plus, Search, Eye, Trash2, Briefcase } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
     Table,
@@ -13,14 +13,22 @@ import {
 } from '@/components/ui/table';
 import { Link } from 'react-router-dom';
 import { CreateProjectDialog } from './CreateProjectDialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/table-skeleton';
 
 export const ProjectsPage = () => {
     const { projects, fetchProjects, deleteProject } = useAppStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        fetchProjects();
+        const load = async () => {
+            setIsLoading(true);
+            await fetchProjects();
+            setIsLoading(false);
+        };
+        load();
     }, [fetchProjects]);
 
     const filteredProjects = projects.filter(p =>
@@ -35,14 +43,14 @@ export const ProjectsPage = () => {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="h-full flex flex-col p-8 space-y-6 animate-in fade-in duration-500">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
                     <p className="text-muted-foreground mt-2">Manage your engineering projects and create material/process lists.</p>
                 </div>
                 <Button onClick={() => setIsCreateOpen(true)} size="lg">
-                    <Plus className="mr-2 h-4 w-4" /> Create Project
+                    <Plus className="mr-2 h-4 w-4" /> Add Project
                 </Button>
             </div>
 
@@ -59,34 +67,38 @@ export const ProjectsPage = () => {
             </div>
 
             <div className="rounded-md border bg-card">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Number</TableHead>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Revision</TableHead>
-                            <TableHead>Created</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredProjects.length === 0 ? (
+                {isLoading ? (
+                    <TableSkeleton columns={6} rows={4} />
+                ) : filteredProjects.length === 0 ? (
+                    <EmptyState
+                        icon={Briefcase}
+                        title={searchTerm ? "No projects found" : "No projects yet"}
+                        description={searchTerm ? "Try adjusting your search terms." : "Create your first engineering project to organize materials and layups."}
+                        actionLabel={searchTerm ? undefined : "Create Project"}
+                        onAction={searchTerm ? undefined : () => setIsCreateOpen(true)}
+                    />
+                ) : (
+                    <Table>
+                        <TableHeader>
                             <TableRow>
-                                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                                    No projects found. Create one to get started.
-                                </TableCell>
+                                <TableHead>Number</TableHead>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Revision</TableHead>
+                                <TableHead>Created</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
-                        ) : (
-                            filteredProjects.map((project) => (
+                        </TableHeader>
+                        <TableBody>
+                            {filteredProjects.map((project) => (
                                 <TableRow key={project.id}>
                                     <TableCell className="font-medium">{project.projectNumber}</TableCell>
                                     <TableCell>{project.name}</TableCell>
                                     <TableCell>
                                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${project.status === 'Active' ? 'bg-green-100 text-green-800' :
-                                                project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
-                                                    project.status === 'On Hold' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-gray-100 text-gray-800'
+                                            project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
+                                                project.status === 'On Hold' ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-gray-100 text-gray-800'
                                             }`}>
                                             {project.status}
                                         </span>
@@ -112,10 +124,10 @@ export const ProjectsPage = () => {
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
+                            ))}
+                        </TableBody>
+                    </Table>
+                )}
             </div>
 
             <CreateProjectDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />

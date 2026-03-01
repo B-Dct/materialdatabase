@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Plus, ChevronRight } from 'lucide-react';
+import { Plus, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
     Table,
@@ -21,18 +21,18 @@ export function RequirementProfileListPage() {
     }, [fetchRequirementProfiles]);
 
     return (
-        <div className="p-8 space-y-6 animate-in fade-in duration-500">
+        <div className="h-full flex flex-col p-8 space-y-6 animate-in fade-in duration-500">
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Standards</h1>
                     <p className="text-muted-foreground">Manage requirement profiles and acceptance criteria.</p>
                 </div>
                 <Button onClick={() => navigate('/standards/new')}>
-                    <Plus className="mr-2 h-4 w-4" /> Create Standard
+                    <Plus className="mr-2 h-4 w-4" /> Add Standard
                 </Button>
             </div>
 
-            <div className="border rounded-md">
+            <div className="flex-1 overflow-hidden border rounded-md">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -59,9 +59,9 @@ export function RequirementProfileListPage() {
                                     <TableCell className="font-medium">{profile.name}</TableCell>
                                     <TableCell>{profile.description}</TableCell>
                                     <TableCell>{profile.rules?.length || 0}</TableCell>
-                                    <TableCell>
-                                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                    </TableCell>
+                                    <Button variant="ghost" size="icon">
+                                        <Eye className="h-4 w-4 text-muted-foreground" />
+                                    </Button>
                                 </TableRow>
                             ))
                         )}

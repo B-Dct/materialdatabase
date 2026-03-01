@@ -169,10 +169,10 @@ export function LayupListPage() {
     const processOptions = processes.map(p => ({ label: p.name, value: p.id }));
 
     return (
-        <div className="h-full flex flex-col p-8 space-y-8 animate-in fade-in duration-500">
+        <div className="h-full flex flex-col p-8 space-y-6 animate-in fade-in duration-500">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Layups</h2>
+                    <h1 className="text-3xl font-bold tracking-tight">Layups</h1>
                     <p className="text-muted-foreground">Manage composite stackups and laminates.</p>
                 </div>
                 <div className="flex gap-2">

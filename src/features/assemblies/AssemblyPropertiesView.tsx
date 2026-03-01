@@ -29,7 +29,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Badge } from '@/components/ui/badge';
-
+import { MeasurementHistoryDialog } from '../materials/MeasurementHistoryDialog';
 
 interface AssemblyPropertiesViewProps {
     assembly: Assembly;
@@ -99,9 +99,21 @@ export function AssemblyPropertiesView({ assembly, measurements }: AssemblyPrope
         return filtered;
     }, [measurements, timeFilter, limitFilter]);
 
+    const [historyDialog, setHistoryDialog] = useState<{
+        isOpen: boolean;
+        propertyName: string;
+        unit?: string;
+        testMethod?: string;
+        data: any[];
+    }>({
+        isOpen: false,
+        propertyName: '',
+        data: []
+    });
+
     const statsMap = useMemo(() => {
-        const map = new Map<string, { mean: number, min: number, max: number, count: number }>();
-        const grouped = new Map<string, number[]>();
+        const map = new Map<string, { mean: number, min: number, max: number, count: number, rawData?: any[] }>();
+        const grouped = new Map<string, Measurement[]>();
 
         filteredMeasurements.forEach(m => {
             const propDef = globalProperties.find(pd => pd.id === m.propertyDefinitionId);
@@ -113,18 +125,20 @@ export function AssemblyPropertiesView({ assembly, measurements }: AssemblyPrope
             // Keying by Name + Method
             const key = `${name}|${method}`;
             if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key)!.push(m.resultValue);
+            grouped.get(key)!.push(m);
         });
 
-        grouped.forEach((vals, key) => {
-            const valid = vals.filter(v => !isNaN(v));
+        grouped.forEach((measurements, key) => {
+            const valid = measurements.filter(m => !isNaN(m.resultValue));
             if (valid.length > 0) {
-                const sum = valid.reduce((a, b) => a + b, 0);
+                const values = valid.map(m => m.resultValue);
+                const sum = values.reduce((a, b) => a + b, 0);
                 map.set(key, {
                     mean: sum / valid.length,
-                    min: Math.min(...valid),
-                    max: Math.max(...valid),
-                    count: valid.length
+                    min: Math.min(...values),
+                    max: Math.max(...values),
+                    count: valid.length,
+                    rawData: valid.map(m => ({ value: m.resultValue, date: m.date, measurement: m }))
                 });
             }
         });
@@ -141,7 +155,7 @@ export function AssemblyPropertiesView({ assembly, measurements }: AssemblyPrope
             unit: string,
             stdValues: Record<string, { min?: number, max?: number, target?: number | string }>, // ProfileID -> Rules
             specValues: Record<string, MaterialProperty>, // SpecID -> Value
-            stats?: { mean: number, min: number, max: number, count: number }
+            stats?: { mean: number, min: number, max: number, count: number, rawData?: any[] }
         }>();
 
         // Helper: Aggressive normalization for method matching (e.g. "ISO-1183" == "ISO 1183")
@@ -285,12 +299,14 @@ export function AssemblyPropertiesView({ assembly, measurements }: AssemblyPrope
                                 const combinedMean = ((targetStats.mean * targetStats.count) + (sourceStats.mean * sourceStats.count)) / combinedCount;
                                 const combinedMin = Math.min(targetStats.min, sourceStats.min);
                                 const combinedMax = Math.max(targetStats.max, sourceStats.max);
+                                const combinedRawData = [...(targetStats.rawData || []), ...(sourceStats.rawData || [])];
 
                                 target.stats = {
                                     mean: combinedMean,
                                     min: combinedMin,
                                     max: combinedMax,
-                                    count: combinedCount
+                                    count: combinedCount,
+                                    rawData: combinedRawData.length > 0 ? combinedRawData : undefined
                                 };
                             }
                         }
@@ -529,7 +545,20 @@ export function AssemblyPropertiesView({ assembly, measurements }: AssemblyPrope
                                             })}
 
                                             {/* Test Stats */}
-                                            <TableCell className="border-l bg-green-50/20 p-2 align-middle text-center">
+                                            <TableCell
+                                                className={`border-l p-2 align-middle text-center ${stats && stats.rawData && stats.rawData.length > 0 ? 'bg-green-50/50 cursor-pointer hover:bg-green-100/50 hover:shadow-inner transition-all' : 'bg-green-50/20'}`}
+                                                onClick={() => {
+                                                    if (stats && stats.rawData && stats.rawData.length > 0) {
+                                                        setHistoryDialog({
+                                                            isOpen: true,
+                                                            propertyName: row.name,
+                                                            unit: row.unit,
+                                                            testMethod: row.method,
+                                                            data: stats.rawData
+                                                        });
+                                                    }
+                                                }}
+                                            >
                                                 {stats ? (
                                                     <div className="flex flex-col items-center justify-center gap-0.5">
                                                         <span className="font-bold text-base text-green-900">{stats.mean.toFixed(2)}</span>
@@ -551,6 +580,16 @@ export function AssemblyPropertiesView({ assembly, measurements }: AssemblyPrope
                     </div>
                 </div>
             </Card>
+
+            <MeasurementHistoryDialog
+                isOpen={historyDialog.isOpen}
+                onClose={() => setHistoryDialog(prev => ({ ...prev, isOpen: false }))}
+                propertyName={historyDialog.propertyName}
+                contextName={assembly.name}
+                unit={historyDialog.unit}
+                testMethod={historyDialog.testMethod}
+                data={historyDialog.data}
+            />
         </div>
     );
 }

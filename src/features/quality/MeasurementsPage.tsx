@@ -1,22 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
-import { FileText, Power, Plus, ArrowUpDown } from "lucide-react";
+import { FileText, Power, Plus, ArrowUpDown, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/table-skeleton';
 
 export function MeasurementsPage() {
     const { measurements, fetchMeasurements, materials, layups, assemblies, properties, fetchMaterials, fetchLayups, fetchAssemblies, fetchProperties, updateMeasurement } = useAppStore();
     const navigate = useNavigate();
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        fetchMeasurements();
-        fetchMaterials();
-        fetchLayups();
-        fetchAssemblies();
-        fetchProperties();
+        const load = async () => {
+            setIsLoading(true);
+            await Promise.all([
+                fetchMeasurements(),
+                fetchMaterials(),
+                fetchLayups(),
+                fetchAssemblies(),
+                fetchProperties()
+            ]);
+            setIsLoading(false);
+        };
+        load();
     }, [fetchMeasurements, fetchMaterials, fetchLayups, fetchAssemblies, fetchProperties]);
 
     const data = useMemo(() => {
@@ -291,43 +301,55 @@ export function MeasurementsPage() {
                 </Button>
             </div>
 
-            <div className="flex-1 overflow-hidden border rounded-md p-4">
-                <DataTable
-                    columns={columns}
-                    data={filteredData}
-                    enableGlobalFilter={true}
-                    globalFilter={globalFilter}
-                    onGlobalFilterChange={setGlobalFilter}
-                    filterPlaceholder="Search measurements..."
-                    onRowClick={(item) => navigate(`/measurements/${item.id}`)}
-                    facetedFilters={[
-                        {
-                            column: "_isActive",
-                            title: "Status",
-                            options: [
-                                { label: "Active", value: "active" },
-                                { label: "Inactive", value: "inactive" }
-                            ]
-                        },
-                        {
-                            column: "testMethod",
-                            title: "Method",
-                            options: Array.from(new Set(data.map(m => m.testMethod).filter((m): m is string => !!m))).map(method => ({
-                                label: method,
-                                value: method
-                            }))
-                        },
-                        {
-                            column: "laboratoryId",
-                            title: "Lab",
-                            options: Array.from(new Set(data.map(m => m.laboratoryId).filter((m): m is string => !!m))).map(lab => ({
-                                label: lab,
-                                value: lab
-                            }))
-                        }
-                    ]}
-                    getRowClassName={(row) => !row._isActive ? "opacity-60 bg-muted/40 data-[state=selected]:bg-muted grayscale-[0.8]" : ""}
-                />
+            <div className="flex-1 overflow-hidden border rounded-md p-4 bg-card">
+                {isLoading ? (
+                    <TableSkeleton columns={8} rows={6} />
+                ) : filteredData.length === 0 ? (
+                    <EmptyState
+                        icon={FlaskConical}
+                        title="No measurements"
+                        description="Add laboratory test reports and data points here."
+                        actionLabel="Add Measurement"
+                        onAction={() => navigate("/measurements/new")}
+                    />
+                ) : (
+                    <DataTable
+                        columns={columns}
+                        data={filteredData}
+                        enableGlobalFilter={true}
+                        globalFilter={globalFilter}
+                        onGlobalFilterChange={setGlobalFilter}
+                        filterPlaceholder="Search measurements..."
+                        onRowClick={(item) => navigate(`/measurements/${item.id}`)}
+                        facetedFilters={[
+                            {
+                                column: "_isActive",
+                                title: "Status",
+                                options: [
+                                    { label: "Active", value: "active" },
+                                    { label: "Inactive", value: "inactive" }
+                                ]
+                            },
+                            {
+                                column: "testMethod",
+                                title: "Method",
+                                options: Array.from(new Set(data.map(m => m.testMethod).filter((m): m is string => !!m))).map(method => ({
+                                    label: method,
+                                    value: method
+                                }))
+                            },
+                            {
+                                column: "laboratoryId",
+                                title: "Lab",
+                                options: Array.from(new Set(data.map(m => m.laboratoryId).filter((m): m is string => !!m))).map(lab => ({
+                                    label: lab,
+                                    value: lab
+                                }))
+                            }
+                        ]}
+                        getRowClassName={(row) => !row._isActive ? "opacity-60 bg-muted/40 data-[state=selected]:bg-muted grayscale-[0.8]" : ""}
+                    />
+                )}
             </div>
         </div>
     );

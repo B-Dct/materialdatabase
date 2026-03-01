@@ -24,6 +24,8 @@ import { SettingsPage } from '@/features/settings/SettingsPage';
 import { TestMethodsView } from '@/features/quality/TestMethodsView';
 import { StandardDetailPage } from '@/features/quality/StandardDetailPage';
 import StandardPartsPage from '@/features/parts/StandardPartsPage';
+import { ProjectsPage } from '@/features/projects/ProjectsPage';
+import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage';
 import { AuthProvider } from '@/lib/auth';
 import { Protect } from '@/components/auth/Protect';
 import { Toaster } from 'sonner';
@@ -48,6 +50,9 @@ function App() {
             <Route path="assemblies/new" element={<CreateAssemblyPage />} />
             <Route path="assemblies/:id" element={<AssemblyDetailPage />} />
             <Route path="parts" element={<StandardPartsPage />} />
+
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="projects/:id" element={<ProjectDetailPage />} />
 
             <Route path="standards" element={<RequirementProfileListPage />} />
             <Route path="standards/new" element={<StandardDetailPage />} />

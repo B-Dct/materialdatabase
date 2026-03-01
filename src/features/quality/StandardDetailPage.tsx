@@ -20,10 +20,10 @@ import {
     Save,
     Plus,
     Trash2,
-    Layers,
     Settings,
     ShieldCheck,
-    Edit
+    Pencil,
+    ListChecks
 } from "lucide-react";
 import {
     Table,
@@ -60,7 +60,9 @@ export function StandardDetailPage() {
         properties,
         fetchProperties,
         processes,
-        fetchProcesses
+        fetchProcesses,
+        materials,
+        fetchMaterials
     } = useAppStore();
 
     const isNew = !id || id === 'new';
@@ -84,6 +86,7 @@ export function StandardDetailPage() {
         if (materialTypes.length === 0) fetchMaterialTypes();
         if (properties.length === 0) fetchProperties();
         if (processes.length === 0) fetchProcesses();
+        if (materials.length === 0) fetchMaterials();
     }, []);
 
     // Load Profile Data
@@ -171,10 +174,21 @@ export function StandardDetailPage() {
     };
 
     const handleRemoveArchitecture = (index: number) => {
-        const newArchitectures = [...layupArchitectures];
-        newArchitectures.splice(index, 1);
-        setLayupArchitectures(newArchitectures);
-        setHasUnsavedChanges(true);
+        if (window.confirm("Are you sure you want to delete this Reference Layup Architecture and all its defined properties?")) {
+            const newArchitectures = [...layupArchitectures];
+            const removedArchId = newArchitectures[index].id;
+            newArchitectures.splice(index, 1);
+            setLayupArchitectures(newArchitectures);
+
+            // Also clean up any rules associated with this architecture
+            if (removedArchId) {
+                const newRules = rules.filter(r => r.referenceArchitectureId !== removedArchId);
+                if (newRules.length !== rules.length) {
+                    setRules(newRules);
+                }
+            }
+            setHasUnsavedChanges(true);
+        }
     };
 
     const handleUpdateRule = (index: number, updatedRule: RequirementRule) => {
@@ -210,9 +224,8 @@ export function StandardDetailPage() {
                 </div>
                 <div className="flex items-center gap-2">
                     {!isNew && !isEditing && (
-                        <Button onClick={() => setIsEditing(true)} variant="outline">
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit Standard
+                        <Button onClick={() => setIsEditing(true)} variant="secondary">
+                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
                         </Button>
                     )}
                     {isEditing && !isNew && (
@@ -253,25 +266,25 @@ export function StandardDetailPage() {
 
             {/* Content */}
             <div className="flex-1 overflow-hidden">
-                <Tabs defaultValue="general" className="h-full flex flex-col">
-                    <div className="px-6 border-b bg-muted/20">
+                <Tabs defaultValue="overview" className="h-full flex flex-col">
+                    <div className="px-4 border-b shrink-0 bg-muted/20">
                         <TabsList className="bg-transparent h-12 w-full justify-start gap-6">
-                            <TabsTrigger value="general" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
-                                <Settings className="h-4 w-4 mr-2" /> General & Applicability
+                            <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
+                                <Settings className="h-4 w-4 mr-2" /> Overview & Applicability
                             </TabsTrigger>
-                            <TabsTrigger value="architectures" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
-                                <Layers className="h-4 w-4 mr-2" /> Reference Architectures
+                            <TabsTrigger value="properties" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
+                                <ShieldCheck className="h-4 w-4 mr-2" /> Properties
                             </TabsTrigger>
-                            <TabsTrigger value="rules" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
-                                <ShieldCheck className="h-4 w-4 mr-2" /> Properties & Rules
+                            <TabsTrigger value="qml" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
+                                <ListChecks className="h-4 w-4 mr-2" /> Qualified Materials List (QML)
                             </TabsTrigger>
                         </TabsList>
                     </div>
 
                     <div className="flex-1 overflow-auto p-6 bg-slate-50/50 dark:bg-slate-900/20">
 
-                        {/* GENERAL TAB */}
-                        <TabsContent value="general" className="max-w-4xl space-y-6 mt-0">
+                        {/* OVERVIEW TAB */}
+                        <TabsContent value="overview" className="max-w-4xl space-y-6 mt-0">
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Basic Information</CardTitle>
@@ -303,7 +316,7 @@ export function StandardDetailPage() {
                                                 placeholder="Brief description of the standard's scope..."
                                             />
                                         ) : (
-                                            <div className="p-2 bg-muted/50 rounded-md text-sm border min-h-[60px] whitespace-pre-wrap">{description}</div>
+                                            <div className="py-2 text-sm min-h-[60px] whitespace-pre-wrap">{description || "No description provided."}</div>
                                         )}
                                     </div>
                                 </CardContent>
@@ -320,119 +333,140 @@ export function StandardDetailPage() {
                                     <div className="space-y-2">
                                         <Label>Material Category</Label>
                                         <div className="flex flex-wrap gap-2">
-                                            {materialTypes.map(type => (
-                                                <Button
-                                                    key={type.name}
-                                                    variant={applicability.includes(`material:${type.name}`) ? "default" : "outline"}
-                                                    size="sm"
-                                                    disabled={!isEditing}
-                                                    onClick={() => {
-                                                        const key = `material:${type.name}`;
-                                                        if (applicability.includes(key)) {
-                                                            setApplicability(applicability.filter(a => a !== key));
-                                                        } else {
-                                                            setApplicability([...applicability, key]);
-                                                        }
-                                                        setHasUnsavedChanges(true);
-                                                    }}
-                                                >
-                                                    {type.name}
-                                                </Button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    {/* ... Context Checkbox ... */}
-                                    <div className="pt-4 space-y-2 border-t">
-                                        <Label>Context</Label>
-                                        <div className="flex gap-4">
-                                            <div className="flex items-center space-x-2">
-                                                <input
-                                                    type="checkbox"
-                                                    id="ctx-layup"
-                                                    className="rounded border-gray-300 disabled:opacity-50"
-                                                    checked={applicability.includes('Layup Projects')}
-                                                    disabled={!isEditing}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) setApplicability([...applicability, 'Layup Projects']);
-                                                        else setApplicability(applicability.filter(a => a !== 'Layup Projects'));
-                                                        setHasUnsavedChanges(true);
-                                                    }}
-                                                />
-                                                <Label htmlFor="ctx-layup" className={!isEditing ? "text-muted-foreground" : ""}>Layup Projects</Label>
-                                            </div>
+                                            {isEditing ? (
+                                                materialTypes.map(type => (
+                                                    <Button
+                                                        key={type.name}
+                                                        variant={applicability.includes(`material:${type.name}`) ? "default" : "outline"}
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            const key = `material:${type.name}`;
+                                                            setApplicability([key]); // Single select as requested
+                                                            setHasUnsavedChanges(true);
+                                                        }}
+                                                    >
+                                                        {type.name}
+                                                    </Button>
+                                                ))
+                                            ) : (
+                                                materialTypes
+                                                    .filter(type => applicability.includes(`material:${type.name}`))
+                                                    .map(type => (
+                                                        <div key={type.name} className="px-3 py-1 bg-primary text-primary-foreground text-sm rounded-md font-medium">
+                                                            {type.name}
+                                                        </div>
+                                                    ))
+                                            )}
+                                            {!isEditing && applicability.filter(a => a.startsWith('material:')).length === 0 && (
+                                                <span className="text-sm text-muted-foreground">No category assigned.</span>
+                                            )}
                                         </div>
                                     </div>
                                 </CardContent>
                             </Card>
                         </TabsContent>
 
-                        {/* ARCHITECTURES TAB */}
-                        <TabsContent value="architectures" className="max-w-5xl space-y-6 mt-0">
-                            <div className="flex justify-between items-center">
+                        {/* PROPERTIES & ARCHITECTURES TAB */}
+                        <TabsContent value="properties" className="max-w-6xl space-y-8 mt-0">
+
+                            {/* Section 1: Basic Material Properties */}
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center border-b pb-2">
+                                    <div>
+                                        <h3 className="text-lg font-medium">Basic Material Properties</h3>
+                                        <p className="text-sm text-muted-foreground">
+                                            Requirements for the raw material (unprocessed) or base material properties.
+                                        </p>
+                                    </div>
+                                    {isEditing && (
+                                        <Button size="sm" variant="outline" onClick={() => {
+                                            setRules([...rules, { propertyId: "", scope: "material" }]);
+                                            setHasUnsavedChanges(true);
+                                        }}>
+                                            <Plus className="h-4 w-4 mr-2" /> Add Material Rule
+                                        </Button>
+                                    )}
+                                </div>
+
+                                <RulesTable
+                                    allRules={rules}
+                                    properties={properties}
+                                    onChangeRule={handleUpdateRule}
+                                    onRemoveRule={handleRemoveRule}
+                                    filterScope="material"
+                                    isEditing={isEditing}
+                                />
+                            </div>
+
+                            {/* Add Reference Layup Button Row */}
+                            <div className="flex justify-between items-center bg-muted/30 p-4 rounded-md border border-dashed">
                                 <div>
-                                    <h3 className="text-lg font-medium">Reference Layup Architectures</h3>
+                                    <h3 className="font-medium text-foreground">Reference Layup Architectures</h3>
                                     <p className="text-sm text-muted-foreground">
-                                        Define standard stackups (types) for this qualification.
+                                        Define properties specific to normalized stackups (e.g. Type 1, Type 2).
                                     </p>
                                 </div>
                                 {isEditing && (
-                                    <Button onClick={openAddArch} size="sm">
-                                        <Plus className="h-4 w-4 mr-2" /> Add Architecture Type
+                                    <Button onClick={openAddArch}>
+                                        <Plus className="h-4 w-4 mr-2" /> Add Reference Layup
                                     </Button>
                                 )}
                             </div>
 
-                            <div className="border rounded-md overflow-hidden">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Type Name</TableHead>
-                                            <TableHead>Description / Stack</TableHead>
-                                            <TableHead>Layers</TableHead>
-                                            <TableHead>Thickness</TableHead>
-                                            <TableHead>Process</TableHead>
-                                            {isEditing && <TableHead className="w-[100px]">Actions</TableHead>}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {layupArchitectures.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={isEditing ? 6 : 5} className="text-center py-8 text-muted-foreground">
-                                                    No architecture types defined. {isEditing && "Add one to get started."}
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : (
-                                            layupArchitectures.map((arch, index) => (
-                                                <TableRow key={arch.id || index}>
-                                                    <TableCell className="font-medium">{arch.name}</TableCell>
-                                                    <TableCell>{arch.description}</TableCell>
-                                                    <TableCell>{arch.layerCount}</TableCell>
-                                                    <TableCell>{arch.thickness} mm</TableCell>
-                                                    <TableCell>{processes.find(p => p.id === arch.processId)?.name || "-"}</TableCell>
-                                                    {isEditing && (
-                                                        <TableCell>
-                                                            <div className="flex gap-1">
-                                                                <Button variant="ghost" size="icon" onClick={() => openEditArch(arch, index)}>
-                                                                    <Edit className="h-4 w-4 text-muted-foreground" />
-                                                                </Button>
-                                                                <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveArchitecture(index)}>
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </Button>
-                                                            </div>
-                                                        </TableCell>
-                                                    )}
-                                                </TableRow>
-                                            ))
-                                        )}
-                                    </TableBody>
-                                </Table>
+                            {/* Section 2: Reference Layups Cards */}
+                            <div className="space-y-8">
+                                {layupArchitectures.map((arch, index) => (
+                                    <div key={arch.id || index} className="space-y-4">
+                                        <div className="flex items-center justify-between border-b pb-2">
+                                            <div>
+                                                <h4 className="text-lg font-medium">{arch.name} Properties</h4>
+                                                <div className="flex gap-4 text-sm text-muted-foreground mt-1">
+                                                    <span><strong className="font-semibold">Stack:</strong> {arch.description || "-"}</span>
+                                                    <span><strong className="font-semibold">Layers:</strong> {arch.layerCount}</span>
+                                                    <span><strong className="font-semibold">Thickness:</strong> {arch.thickness} mm</span>
+                                                    <span><strong className="font-semibold">Process:</strong> {processes.find(p => p.id === arch.processId)?.name || "-"}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {isEditing && (
+                                                    <Button size="sm" variant="outline" onClick={() => {
+                                                        setRules([...rules, { propertyId: "", scope: "layup", referenceArchitectureId: arch.id }]);
+                                                        setHasUnsavedChanges(true);
+                                                    }}>
+                                                        <Plus className="h-4 w-4 mr-2" /> Add Property to {arch.name}
+                                                    </Button>
+                                                )}
+                                                {isEditing && (
+                                                    <>
+                                                        <Button variant="outline" size="sm" onClick={() => openEditArch(arch, index)}>
+                                                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
+                                                        </Button>
+                                                        <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleRemoveArchitecture(index)}>
+                                                            <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <RulesTable
+                                                allRules={rules}
+                                                properties={properties}
+                                                onChangeRule={handleUpdateRule}
+                                                onRemoveRule={handleRemoveRule}
+                                                filterScope="layup"
+                                                specificArchitectureId={arch.id}
+                                                isEditing={isEditing}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                            {/* Dialog logic remains same, triggered only by buttons created when isEditing */}
+
                             {/* Architecture Dialog */}
                             <Dialog open={isArchDialogOpen} onOpenChange={(open) => {
                                 if (!open) setIsArchDialogOpen(false);
                             }}>
-                                {/* ... Keep Dialog Content ... */}
                                 <DialogContent>
                                     <DialogHeader>
                                         <DialogTitle>{editingArchIndex !== null ? "Edit Architecture" : "Add Architecture"}</DialogTitle>
@@ -442,7 +476,6 @@ export function StandardDetailPage() {
                                     </DialogHeader>
                                     {currentArch && (
                                         <div className="grid gap-4 py-4">
-                                            {/* ... Inputs ... */}
                                             <div className="grid gap-2">
                                                 <Label>Type Name</Label>
                                                 <Input
@@ -506,92 +539,72 @@ export function StandardDetailPage() {
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
+
                         </TabsContent>
 
-                        {/* RULES TAB */}
-                        <TabsContent value="rules" className="max-w-6xl space-y-8 mt-0">
-
-                            {/* Section 1: Basic Material Properties */}
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center border-b pb-2">
-                                    <div>
-                                        <h3 className="text-lg font-medium">Basic Material Properties</h3>
-                                        <p className="text-sm text-muted-foreground">
-                                            Requirements for the raw material (unprocessed) or base material properties.
-                                        </p>
-                                    </div>
-                                    {isEditing && (
-                                        <Button size="sm" variant="outline" onClick={() => {
-                                            setRules([...rules, { propertyId: "", scope: "material" }]);
-                                            setHasUnsavedChanges(true);
-                                        }}>
-                                            <Plus className="h-4 w-4 mr-2" /> Add Material Rule
-                                        </Button>
-                                    )}
+                        {/* QML TAB */}
+                        <TabsContent value="qml" className="max-w-6xl space-y-6 mt-0">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-lg font-medium">Qualified Materials List (QML)</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        Materials that are qualified against this standard.
+                                    </p>
                                 </div>
-
-                                <RulesTable
-                                    allRules={rules}
-                                    properties={properties}
-                                    onChangeRule={handleUpdateRule}
-                                    onRemoveRule={handleRemoveRule}
-                                    filterScope="material"
-                                    isEditing={isEditing}
-                                />
                             </div>
 
-                            {/* Section 2: Reference Layup Properties */}
-                            <div className="space-y-4 pt-4">
-                                <div className="flex justify-between items-center border-b pb-2">
-                                    <div>
-                                        <h3 className="text-lg font-medium">Reference Layup Properties</h3>
-                                        <p className="text-sm text-muted-foreground">
-                                            Requirements specific to defined architecture types (processed).
-                                        </p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        {isEditing && layupArchitectures.length > 0 ? (
-                                            <Button size="sm" variant="outline" onClick={() => {
-                                                if (layupArchitectures.length > 0) {
-                                                    setRules([...rules, { propertyId: "", scope: "layup", referenceArchitectureId: layupArchitectures[0].id }]);
-                                                    setHasUnsavedChanges(true);
-                                                }
-                                            }}>
-                                                <Plus className="h-4 w-4 mr-2" /> Add Layup Rule
-                                            </Button>
-                                        ) : isEditing ? (
-                                            <Button size="sm" variant="ghost" disabled>First define Architectures</Button>
-                                        ) : null}
-                                    </div>
-                                </div>
-
-                                {layupArchitectures.length === 0 ? (
-                                    <div className="p-4 text-sm text-muted-foreground bg-slate-50 border border-dashed rounded text-center">
-                                        Define Reference Architectures in the previous tab to add layup-specific rules.
-                                    </div>
-                                ) : (
-                                    <RulesTable
-                                        allRules={rules}
-                                        properties={properties}
-                                        architectures={layupArchitectures}
-                                        onChangeRule={handleUpdateRule}
-                                        onRemoveRule={handleRemoveRule}
-                                        filterScope="layup"
-                                        isEditing={isEditing}
-                                    />
-                                )}
+                            <div className="border rounded-md overflow-hidden bg-card">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Material Name</TableHead>
+                                            <TableHead>Type</TableHead>
+                                            <TableHead>Status</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {materials
+                                            .filter(m => m.assignedProfileIds?.includes(id!))
+                                            .sort((a, b) => {
+                                                const order: Record<string, number> = { 'active': 1, 'restricted': 2, 'obsolete': 3, 'dev': 4 };
+                                                return (order[a.status] || 99) - (order[b.status] || 99);
+                                            })
+                                            .map(material => (
+                                                <TableRow key={material.id}>
+                                                    <TableCell className="font-medium cursor-pointer text-primary hover:underline" onClick={() => navigate(`/materials/${material.id}`)}>
+                                                        {material.name}
+                                                    </TableCell>
+                                                    <TableCell>{material.type}</TableCell>
+                                                    <TableCell>
+                                                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${material.status === 'active' ? 'bg-green-100 text-green-800' :
+                                                            material.status === 'obsolete' ? 'bg-red-100 text-red-800' :
+                                                                material.status === 'restricted' ? 'bg-yellow-100 text-yellow-800' :
+                                                                    'bg-gray-100 text-gray-800'
+                                                            }`}>
+                                                            {material.status}
+                                                        </span>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        {materials.filter(m => m.assignedProfileIds?.includes(id!)).length === 0 && (
+                                            <TableRow>
+                                                <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                                                    No materials are currently qualified under this standard.
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
                             </div>
-
                         </TabsContent>
 
                     </div>
                 </Tabs>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
 
-// Helper Component for Rules Table
 function RulesTable({
     allRules,
     properties,
@@ -599,6 +612,7 @@ function RulesTable({
     onRemoveRule,
     filterScope,
     architectures = [],
+    specificArchitectureId,
     isEditing = false
 }: {
     allRules: RequirementRule[],
@@ -607,6 +621,7 @@ function RulesTable({
     onRemoveRule: (index: number) => void,
     filterScope: 'material' | 'layup',
     architectures?: ReferenceLayupArchitecture[],
+    specificArchitectureId?: string,
     isEditing?: boolean
 }) {
     // We render the rows that match the scope
@@ -617,7 +632,11 @@ function RulesTable({
         .map((rule, index) => ({ rule, index }))
         .filter(({ rule }) => {
             if (filterScope === 'material') return rule.scope === 'material' || !rule.scope;
-            if (filterScope === 'layup') return rule.scope === 'layup';
+            if (filterScope === 'layup') {
+                if (rule.scope !== 'layup') return false;
+                if (specificArchitectureId) return rule.referenceArchitectureId === specificArchitectureId;
+                return true;
+            }
             return false;
         });
 
@@ -631,7 +650,7 @@ function RulesTable({
                 <thead className="bg-muted text-left">
                     <tr>
                         <th className="p-3 font-medium min-w-[200px]">Property</th>
-                        {filterScope === 'layup' && <th className="p-3 font-medium">Architecture Type</th>}
+                        {filterScope === 'layup' && !specificArchitectureId && <th className="p-3 font-medium">Architecture Type</th>}
                         <th className="p-3 font-medium w-24">Min</th>
                         <th className="p-3 font-medium w-24">Max</th>
                         <th className="p-3 font-medium w-24">Target</th>
@@ -650,7 +669,7 @@ function RulesTable({
                             return (
                                 <tr key={index} className="bg-card">
                                     <td className="p-3">{selectedProp?.name || "Unknown Property"}</td>
-                                    {filterScope === 'layup' && (
+                                    {filterScope === 'layup' && !specificArchitectureId && (
                                         <td className="p-3">
                                             {architectures.find(a => a.id === rule.referenceArchitectureId)?.name || "-"}
                                         </td>
@@ -685,7 +704,7 @@ function RulesTable({
                                         </SelectContent>
                                     </Select>
                                 </td>
-                                {filterScope === 'layup' && (
+                                {filterScope === 'layup' && !specificArchitectureId && (
                                     <td className="p-2">
                                         <Select
                                             value={rule.referenceArchitectureId}
@@ -756,7 +775,11 @@ function RulesTable({
                                     )}
                                 </td>
                                 <td className="p-2">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onRemoveRule(index)}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
+                                        if (window.confirm("Are you sure you want to delete this property requirement?")) {
+                                            onRemoveRule(index);
+                                        }
+                                    }}>
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </td>

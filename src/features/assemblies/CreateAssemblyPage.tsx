@@ -1,10 +1,12 @@
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { AssemblyStackEditor } from './AssemblyStackEditor';
 
 export function CreateAssemblyPage() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const projectId = new URLSearchParams(location.search).get('projectId');
 
     const handleSaveSuccess = () => {
         navigate('/assemblies');
@@ -33,6 +35,7 @@ export function CreateAssemblyPage() {
                     <AssemblyStackEditor
                         readonly={false}
                         onSaveSuccess={handleSaveSuccess}
+                        initialProjectIds={projectId ? [projectId] : undefined}
                     />
                 </div>
             </div>

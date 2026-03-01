@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
-import { normalizeEntityData } from './analysis-utils';
+import { useComparisonData } from './useComparisonData';
+import type { AnalysisCartItem } from '@/types/domain';
 import { motion } from 'framer-motion';
 
 import {
@@ -166,27 +167,32 @@ function ScatterPlot({ data, xKey, yKey, labelKey }: { data: any[], xKey: string
 // --- Main Component ---
 
 interface AnalyticsChartsProps {
-    selectedIds: string[];
+    cart: AnalysisCartItem[];
 }
 
-export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
-    const { materials, properties, measurements, fetchMaterials, fetchProperties, fetchMeasurements } = useAppStore();
+export function AnalyticsCharts({ cart }: AnalyticsChartsProps) {
+    const { materials, layups, assemblies } = useAppStore();
+    const data = useComparisonData(cart);
+
     const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
     const [chartType, setChartType] = useState<'radar' | 'scatter'>('radar');
 
-    const [sourceMode, setSourceMode] = useState<'auto' | 'properties' | 'measurements'>('auto');
+    const getEntityName = (item: AnalysisCartItem) => {
+        if (item.type === 'material') return materials.find(m => m.id === item.id)?.name || 'Unknown';
+        if (item.type === 'layup') return layups.find(l => l.id === item.id)?.name || 'Unknown';
+        if (item.type === 'assembly') return assemblies.find(a => a.id === item.id)?.name || 'Unknown';
+        return 'Unknown';
+    };
+
+    const availableProperties = useMemo(() => {
+        return data.filter(row => row.values.some(v => v.actual || v.specification));
+    }, [data]);
 
     useEffect(() => {
-        fetchMaterials();
-        fetchProperties();
-        fetchMeasurements();
-    }, []);
-
-    useEffect(() => {
-        if (properties.length > 0 && selectedPropertyIds.length === 0) {
-            setSelectedPropertyIds(properties.slice(0, 5).map(p => p.id));
+        if (availableProperties.length > 0 && selectedPropertyIds.length === 0) {
+            setSelectedPropertyIds(availableProperties.slice(0, 5).map(p => p.propertyId));
         }
-    }, [properties]);
+    }, [availableProperties]);
 
     const togglePropertySelection = (id: string) => {
         if (selectedPropertyIds.includes(id)) {
@@ -198,26 +204,20 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
 
     // Prepare Data
     const chartData = useMemo(() => {
-        return selectedIds.map(id => {
-            const mat = materials.find(m => m.id === id);
-            if (!mat) return null;
-            const norm = normalizeEntityData(mat, 'material', measurements, properties, sourceMode);
-
-            // Flatten for chart
-            const flat: any = { name: norm.name };
-
-            // For Radar: Normalize specific props to 0-100 scale?
-            // Heuristic: Find max value across ALL selected for each prop to scale.
-
-            // For Scatter: Keep raw values.
-
-            properties.forEach(p => {
-                flat[p.id] = norm.properties[p.id]?.value || 0;
+        return cart.map((item, idx) => {
+            const flat: any = { name: getEntityName(item) };
+            selectedPropertyIds.forEach(pid => {
+                const row = availableProperties.find(p => p.propertyId === pid);
+                if (row) {
+                    const val = row.values[idx];
+                    flat[pid] = val?.actual?.value ?? val?.specification?.nominal ?? 0;
+                } else {
+                    flat[pid] = 0;
+                }
             });
-
             return flat;
-        }).filter(Boolean);
-    }, [selectedIds, materials, measurements, properties, sourceMode]);
+        });
+    }, [cart, selectedPropertyIds, availableProperties]);
 
     // Scaling for Radar
     const radarData = useMemo(() => {
@@ -225,7 +225,6 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
         return chartData.map(d => {
             const scaled: any = { name: d.name };
             selectedPropertyIds.forEach(pid => {
-                // Find Max
                 const max = Math.max(...chartData.map(i => i[pid] || 0));
                 const val = d[pid] || 0;
                 scaled[pid] = max === 0 ? 0 : (val / max) * 100;
@@ -235,7 +234,7 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
     }, [chartData, selectedPropertyIds]);
 
     const activeKeys = selectedPropertyIds;
-    const activeLabels = selectedPropertyIds.map(id => properties.find(p => p.id === id)?.name || id);
+    const activeLabels = selectedPropertyIds.map(id => availableProperties.find(p => p.propertyId === id)?.propertyName || id);
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-full animate-in fade-in duration-500">
@@ -258,35 +257,24 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
                         </Select>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Data Source</label>
-                        <Select value={sourceMode} onValueChange={(v: any) => setSourceMode(v)}>
-                            <SelectTrigger>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="auto">Auto (Best Available)</SelectItem>
-                                <SelectItem value="properties">Properties Only</SelectItem>
-                                <SelectItem value="measurements">Measurements Only</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-
                     <div className="space-y-4">
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Properties ({selectedPropertyIds.length})</label>
-                            <div className="space-y-1 h-[250px] overflow-y-auto border rounded p-2">
-                                {properties.map(p => (
-                                    <div key={p.id} className="flex items-center space-x-2">
+                            <div className="space-y-1 h-[250px] overflow-y-auto border rounded p-2 bg-muted/30">
+                                {availableProperties.map(p => (
+                                    <div key={p.propertyId} className="flex items-center space-x-2 p-1 hover:bg-muted/50 rounded">
                                         <input
                                             type="checkbox"
-                                            checked={selectedPropertyIds.includes(p.id)}
-                                            onChange={() => togglePropertySelection(p.id)}
+                                            checked={selectedPropertyIds.includes(p.propertyId)}
+                                            onChange={() => togglePropertySelection(p.propertyId)}
                                             className="h-4 w-4 rounded border-gray-300"
                                         />
-                                        <span className="text-sm truncate" title={p.name}>{p.name}</span>
+                                        <span className="text-sm truncate" title={p.propertyName}>{p.propertyName}</span>
                                     </div>
                                 ))}
+                                {availableProperties.length === 0 && (
+                                    <div className="text-sm text-muted-foreground p-2">No numerical properties available in comparison.</div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -294,9 +282,9 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
             </Card>
 
             <div className="col-span-3 flex flex-col items-center p-6 bg-card rounded-lg border h-full overflow-hidden">
-                {selectedIds.length < 2 ? (
+                {cart.length < 2 ? (
                     <div className="flex-1 flex items-center justify-center text-muted-foreground text-center">
-                        Select at least 2 materials in the dashboard header to visualize.
+                        Select at least 2 items in the dashboard header to visualize.
                     </div>
                 ) : (
                     <>
@@ -308,8 +296,8 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
                                 </p>
                             </div>
                             <div className="text-xs text-muted-foreground flex gap-4">
-                                <span>X: {activeLabels[0]}</span>
-                                {chartType === 'scatter' && <span>Y: {activeLabels[1]}</span>}
+                                {activeLabels.length > 0 && <span>X: {activeLabels[0]}</span>}
+                                {chartType === 'scatter' && activeLabels.length > 1 && <span>Y: {activeLabels[1]}</span>}
                             </div>
                         </div>
 
@@ -332,8 +320,8 @@ export function AnalyticsCharts({ selectedIds }: AnalyticsChartsProps) {
                                             labelKey="name"
                                         />
                                     ) : (
-                                        <div className="flex items-center justify-center h-full text-red-500">
-                                            Select at least 2 properties for Scatter Plot
+                                        <div className="flex items-center justify-center h-full text-red-500 font-medium">
+                                            Select at least 2 properties to generate a scatter plot.
                                         </div>
                                     )}
                                 </div>

@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Plus, Eye, Activity, Check, X } from 'lucide-react';
+import { Plus, Eye, Activity, Check, X, LayersIcon } from 'lucide-react';
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'; // Added import
@@ -9,14 +9,21 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { type Assembly } from '@/types/domain';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/table-skeleton';
 
 export function AssemblyListPage() {
     const navigate = useNavigate();
     const { assemblies, layups, fetchAssemblies, fetchLayups } = useAppStore();
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        fetchAssemblies();
-        fetchLayups();
+        const load = async () => {
+            setIsLoading(true);
+            await Promise.all([fetchAssemblies(), fetchLayups()]);
+            setIsLoading(false);
+        };
+        load();
     }, [fetchAssemblies, fetchLayups]);
 
     // Enrich assemblies for search
@@ -134,7 +141,7 @@ export function AssemblyListPage() {
     ];
 
     return (
-        <div className="h-full flex flex-col p-8 space-y-8 animate-in fade-in duration-500">
+        <div className="h-full flex flex-col p-8 space-y-6 animate-in fade-in duration-500">
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Assemblies</h1>
@@ -144,26 +151,38 @@ export function AssemblyListPage() {
                 <Button onClick={() => navigate('/assemblies/new')}><Plus className="mr-2 h-4 w-4" /> Add Assembly</Button>
             </div>
 
-            <div className="flex-1 overflow-hidden border rounded-md p-4">
-                <DataTable
-                    columns={columns}
-                    data={sortedAssemblies}
-                    enableGlobalFilter={true}
-                    filterPlaceholder="Search assemblies, sub-components..."
-                    facetedFilters={[
-                        {
-                            column: "status",
-                            title: "Status",
-                            options: [
-                                { label: "Active", value: "active" },
-                                { label: "Standard", value: "standard" },
-                                { label: "Engineering", value: "engineering" },
-                                { label: "Restricted", value: "restricted" },
-                                { label: "Obsolete", value: "obsolete" }
-                            ]
-                        }
-                    ]}
-                />
+            <div className="flex-1 overflow-hidden border rounded-md p-4 bg-card">
+                {isLoading ? (
+                    <TableSkeleton columns={6} rows={5} />
+                ) : assemblies.length === 0 ? (
+                    <EmptyState
+                        icon={LayersIcon}
+                        title="No assemblies yet"
+                        description="Create complex parts by assembling multiple material layups."
+                        actionLabel="Add Assembly"
+                        onAction={() => navigate('/assemblies/new')}
+                    />
+                ) : (
+                    <DataTable
+                        columns={columns}
+                        data={sortedAssemblies}
+                        enableGlobalFilter={true}
+                        filterPlaceholder="Search assemblies, sub-components..."
+                        facetedFilters={[
+                            {
+                                column: "status",
+                                title: "Status",
+                                options: [
+                                    { label: "Active", value: "active" },
+                                    { label: "Standard", value: "standard" },
+                                    { label: "Engineering", value: "engineering" },
+                                    { label: "Restricted", value: "restricted" },
+                                    { label: "Obsolete", value: "obsolete" }
+                                ]
+                            }
+                        ]}
+                    />
+                )}
             </div>
         </div>
     );

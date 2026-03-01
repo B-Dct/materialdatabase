@@ -8,7 +8,7 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
+
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +20,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { ProjectStatus } from '@/types/domain';
+import type { ProjectStatus } from '@/types/domain';
 
 interface CreateProjectDialogProps {
     open: boolean;
@@ -48,7 +48,8 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({ open, 
                 description: formData.description,
                 status: formData.status,
                 revision: formData.revision,
-                createdBy: 'user-id-placeholder' // TODO: Replace with actual auth user ID
+                // createdBy: 'user-id-placeholder' - omitted until actual auth is hooked up, 
+                // DB should allow null or use authenticated user via RLS default depending on setup
             });
             onOpenChange(false);
             setFormData({

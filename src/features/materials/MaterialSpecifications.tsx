@@ -126,6 +126,8 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
 
     const materialSpecs = specifications.filter(s => s.materialId === material.id);
 
+    const [isConfirmNoStandardOpen, setIsConfirmNoStandardOpen] = useState(false);
+
     const toggleSpecExpansion = (specId: string) => {
         const newSet = new Set(expandedSpecs);
         if (newSet.has(specId)) {
@@ -136,11 +138,22 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
         setExpandedSpecs(newSet);
     };
 
+    const onAddRequest = () => {
+        if (!newSpec.name || !newSpec.code) return;
+        if (!newSpec.requirementProfileId) {
+            setIsConfirmNoStandardOpen(true);
+        } else {
+            handleAddSpecification();
+        }
+    };
+
     const handleAddSpecification = async () => {
         if (!newSpec.name || !newSpec.code) return;
 
         try {
+            const specId = uuidv4();
             await addSpecification({
+                id: specId,
                 materialId: material.id,
                 name: newSpec.name,
                 code: newSpec.code,
@@ -151,7 +164,43 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                 documentUrl: newSpec.documentUrl,
                 requirementProfileId: newSpec.requirementProfileId
             });
+
+            // Derive properties if a standard is selected
+            if (newSpec.requirementProfileId) {
+                const profile = requirementProfiles.find(p => p.id === newSpec.requirementProfileId);
+                if (profile && profile.rules && profile.rules.length > 0) {
+                    const newProperties: MaterialProperty[] = profile.rules.map(rule => {
+                        return {
+                            id: uuidv4(),
+                            name: properties.find(p => p.id === rule.propertyId)?.name || 'Unknown Property',
+                            value: rule.target !== undefined ? rule.target : "",
+                            unit: rule.unit || "",
+                            method: rule.method || "",
+                            specificationId: specId,
+                            referenceArchitectureId: rule.referenceArchitectureId,
+                            specification: newSpec.name || "", // Compatibility, deprecated field
+                            vMin: rule.min,
+                            vMax: rule.max,
+                            vMean: typeof rule.target === 'number' ? rule.target : undefined
+                        };
+                    });
+
+                    if (newProperties.length > 0) {
+                        const updatedProperties = [...(material.properties || []), ...newProperties];
+                        await updateMaterial(material.id, { properties: updatedProperties });
+                        toast.success(`Specification created and derived ${newProperties.length} properties from standard.`);
+                    } else {
+                        toast.success("Specification created (no rules found in standard).");
+                    }
+                } else {
+                    toast.success("Specification created (standard has no rules).");
+                }
+            } else {
+                toast.success("Specification created without standard.");
+            }
+
             setIsAddDialogOpen(false);
+            setIsConfirmNoStandardOpen(false);
             setNewSpec({
                 name: "",
                 code: "",
@@ -162,6 +211,7 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
             });
         } catch (error) {
             console.error("Failed to add specification:", error);
+            toast.error("Failed to add specification.");
         }
     };
 
@@ -374,7 +424,7 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                                     <TooltipTrigger asChild>
                                         <span tabIndex={0}>
                                             <Button
-                                                onClick={handleAddSpecification}
+                                                onClick={onAddRequest}
                                                 disabled={!newSpec.name || !newSpec.code}
                                             >
                                                 Add Specification
@@ -391,6 +441,23 @@ export function MaterialSpecifications({ material }: MaterialSpecificationsProps
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+
+                {/* Confirmation Dialog for explicitly omitting a standard */}
+                <AlertDialog open={isConfirmNoStandardOpen} onOpenChange={setIsConfirmNoStandardOpen}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Create without Standard?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Are you sure you want to create the specification without a referenced standard?
+                                Properties will need to be entered manually as they cannot be automatically derived.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setIsConfirmNoStandardOpen(false)}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleAddSpecification}>Yes, Proceed without Standard</AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
 
             <Card>

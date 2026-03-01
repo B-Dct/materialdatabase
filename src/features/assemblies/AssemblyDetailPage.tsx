@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil } from "lucide-react";
+import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil, Archive, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
@@ -94,8 +94,7 @@ export function AssemblyDetailPage() {
     return (
         <div className="h-full flex flex-col overflow-hidden animate-in fade-in">
             {/* Header */}
-            {/* Header */}
-            <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 py-4 flex items-center justify-between shrink-0">
+            <div className="border-b px-6 py-4 flex items-center justify-between bg-card text-card-foreground shadow-sm shrink-0">
                 <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => navigate('/assemblies')}>
@@ -118,15 +117,7 @@ export function AssemblyDetailPage() {
                                 onClick={() => setArchiveOpen(true)}
                                 className="border-destructive/50 hover:bg-destructive/10 text-destructive h-8"
                             >
-                                Archive
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setArchiveOpen(true)}
-                                className="border-destructive/50 hover:bg-destructive/10 text-destructive h-8"
-                            >
-                                Archive
+                                <Archive className="mr-2 h-4 w-4" /> Archive
                             </Button>
 
                             <TooltipProvider>
@@ -140,7 +131,7 @@ export function AssemblyDetailPage() {
                                                 className="h-8"
                                                 disabled={isInUse}
                                             >
-                                                Delete
+                                                <Trash2 className="mr-2 h-4 w-4" /> Delete
                                             </Button>
                                         </span>
                                     </TooltipTrigger>

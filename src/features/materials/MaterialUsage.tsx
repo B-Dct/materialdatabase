@@ -1,5 +1,9 @@
-import { Briefcase } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Briefcase, Loader2 } from "lucide-react";
 import type { Material } from "@/types/domain";
+import type { MaterialUsageRecord } from "@/lib/storage/types";
+import { storage } from "@/lib/store";
+import { Link } from "react-router-dom";
 import {
     Table,
     TableBody,
@@ -14,19 +18,48 @@ interface MaterialUsageProps {
     material: Material;
 }
 
-// Mock Data for "Project Material Lists"
-const MOCK_PROJECTS = [
-    { id: 'proj-001', name: 'Airbus A350 Wing', list: 'Structural Composites', role: 'Primary Structure', status: 'Approved' },
-    { id: 'proj-002', name: 'Formula 1 Front Wing', list: 'Aero Parts', role: 'Skin', status: 'In Review' },
-    { id: 'proj-003', name: 'Internal R&D', list: 'Material Screening', role: 'Candidate', status: 'Testing' },
-];
-
 export function MaterialUsage({ material }: MaterialUsageProps) {
-    // In a real app, we would fetch projects where materialId matches.
-    // For now, we randomize visibility based on ID to simulate variety
-    const linkedProjects = MOCK_PROJECTS.filter(() => Math.random() > 0.3 || material.name.includes("Carbon"));
+    const [records, setRecords] = useState<MaterialUsageRecord[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    if (linkedProjects.length === 0) {
+    useEffect(() => {
+        let isMounted = true;
+        const fetchUsage = async () => {
+            setIsLoading(true);
+            try {
+                const data = await storage.getMaterialUsage(material.id);
+                if (isMounted) {
+                    setRecords(data);
+                }
+            } catch (error) {
+                console.error("Failed to load material usage", error);
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        if (material.id) {
+            fetchUsage();
+        } else {
+            setIsLoading(false);
+        }
+
+        return () => {
+            isMounted = false;
+        };
+    }, [material.id]);
+
+    if (isLoading) {
+        return (
+            <div className="py-12 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    if (records.length === 0) {
         return (
             <div className="py-12 text-center border-2 border-dashed rounded-lg bg-muted/10 text-muted-foreground">
                 <Briefcase className="mx-auto h-12 w-12 opacity-50 mb-3" />
@@ -42,20 +75,28 @@ export function MaterialUsage({ material }: MaterialUsageProps) {
                 <TableHeader>
                     <TableRow>
                         <TableHead>Project Name</TableHead>
-                        <TableHead>Material List</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>Project Status</TableHead>
+                        <TableHead>List Name</TableHead>
+                        <TableHead>List Revision</TableHead>
+                        <TableHead>List Status</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {linkedProjects.map((proj) => (
-                        <TableRow key={proj.id}>
-                            <TableCell className="font-medium">{proj.name}</TableCell>
-                            <TableCell>{proj.list}</TableCell>
-                            <TableCell>{proj.role}</TableCell>
+                    {records.map((record) => (
+                        <TableRow key={record.listId}>
+                            <TableCell className="font-medium">
+                                <Link to={`/projects/${record.projectId}`} className="text-primary hover:underline">
+                                    {record.projectName}
+                                </Link>
+                            </TableCell>
                             <TableCell>
-                                <Badge variant={proj.status === 'Approved' ? 'default' : 'secondary'}>
-                                    {proj.status}
+                                <Badge variant="outline">{record.projectStatus}</Badge>
+                            </TableCell>
+                            <TableCell>{record.listName}</TableCell>
+                            <TableCell>Issue {record.listRevision}</TableCell>
+                            <TableCell>
+                                <Badge variant={record.listStatus === 'approved' ? 'default' : record.listStatus === 'frozen' ? 'secondary' : 'outline'}>
+                                    {record.listStatus}
                                 </Badge>
                             </TableCell>
                         </TableRow>

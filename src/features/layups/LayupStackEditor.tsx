@@ -26,11 +26,13 @@ interface LayupStackEditorProps {
     layup?: any; // To be typed properly
     readonly?: boolean;
     lockStructure?: boolean; // New prop: Locking stack for edits
+    initialProjectIds?: string[]; // Auto-assign to projects when creating new
+    initialWorkPackageId?: string; // Auto-assign to WP and restrict materials
     onSaveSuccess?: () => void;
 }
 
-export function LayupStackEditor({ layup, readonly = false, lockStructure = false, onSaveSuccess }: LayupStackEditorProps) {
-    const { addLayup, materials, processes, fetchProcesses, fetchMaterials } = useAppStore();
+export function LayupStackEditor({ layup, readonly = false, lockStructure = false, initialProjectIds, initialWorkPackageId, onSaveSuccess }: LayupStackEditorProps) {
+    const { addLayup, updateLayup, materials, processes, fetchProcesses, fetchMaterials, requirementProfiles, fetchRequirementProfiles, workPackages, fetchWorkPackages } = useAppStore();
     const [name, setName] = useState(layup?.name || "");
     const [status, setStatus] = useState<EntityStatus>(layup?.status || "engineering");
     const [processId, setProcessId] = useState<string>(layup?.processId || "");
@@ -40,6 +42,38 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
     // Reference Layup Definition
     const [isReference, setIsReference] = useState<boolean>(layup?.isReference || false);
     const [referenceMaterialId, setReferenceMaterialId] = useState<string>(layup?.materialId || "");
+    const [selectedProfileId, setSelectedProfileId] = useState<string>(layup?.assignedProfileIds?.[0] || "");
+    const [selectedArchitectureId, setSelectedArchitectureId] = useState<string>(layup?.architectureTypeId || "");
+
+    // Derived Lists for Cascading Dropdowns
+    const availableProfiles = requirementProfiles.filter(p => {
+        if (!referenceMaterialId) return false;
+        const mat = materials.find(m => m.id === referenceMaterialId);
+        if (!mat) return false;
+        const materialTag = `material:${mat.name}`;
+        return (mat.assignedProfileIds?.includes(p.id)) || (p.applicability?.includes(materialTag));
+    });
+
+    const selectedProfile = requirementProfiles.find(p => p.id === selectedProfileId);
+    const availableArchitectures = selectedProfile?.layupArchitectures || [];
+    const selectedArchitecture = availableArchitectures.find(a => a.id === selectedArchitectureId);
+
+    useEffect(() => {
+        if (isReference && !readonly && !layup?.id) { // Only auto-generate on creation
+            const refMaterial = materials.find(m => m.id === referenceMaterialId);
+            const refProfile = requirementProfiles.find(p => p.id === selectedProfileId);
+            const refArchitecture = availableArchitectures.find(a => a.id === selectedArchitectureId);
+
+            if (refMaterial && refProfile && refArchitecture) {
+                const generatedName = `${refMaterial.name}_${refProfile.name}_${refArchitecture.name}`;
+                setName(generatedName);
+                if (refArchitecture.thickness) {
+                    setThickness(refArchitecture.thickness);
+                }
+                setProcessId("none");
+            }
+        }
+    }, [isReference, referenceMaterialId, selectedProfileId, selectedArchitectureId, materials, requirementProfiles, availableArchitectures, readonly, layup?.id]);
 
     const [layers, setLayers] = useState<LayerItem[]>(
         layup?.layers?.map((l: any) => ({
@@ -67,6 +101,8 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
             setWeight(layup.totalWeight || 0);
             setIsReference(layup.isReference || false);
             setReferenceMaterialId(layup.materialId || "");
+            setSelectedProfileId(layup.assignedProfileIds?.[0] || "");
+            setSelectedArchitectureId(layup.architectureTypeId || "");
 
             if (layup.layers && layup.layers.length > 0) {
                 setLayers(layup.layers.map((l: any) => {
@@ -101,13 +137,27 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
     useEffect(() => {
         fetchProcesses();
         fetchMaterials();
-    }, [fetchProcesses, fetchMaterials]);
+        fetchRequirementProfiles();
+        if (initialProjectIds?.[0]) {
+            fetchWorkPackages(initialProjectIds[0]);
+        } else if (initialWorkPackageId) {
+            // Also need to get work packages if we only have a wpId so we can fetch its context.
+            // Currently, fetchWorkPackages requires a projectId. Let's see if we can get it or just ignore missing fetch for now.
+            // Since workPackages might already be loaded in state by the project view.
+        }
+    }, [fetchProcesses, fetchMaterials, fetchRequirementProfiles, fetchWorkPackages, initialProjectIds, initialWorkPackageId]);
+
+    // Work Package Context filtering
+    const wpContext = initialWorkPackageId ? workPackages.find(wp => wp.id === initialWorkPackageId) : null;
+    const allowedMaterialIds = wpContext ? wpContext.assignedMaterials.map(m => m.materialId) : null;
 
     // Filtered Materials List
-    const filteredMaterials = (materials || []).filter(m =>
-        (m.name || "").toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !['restricted', 'obsolete'].includes(m.status)
-    );
+    const filteredMaterials = (materials || []).filter(m => {
+        const matchesSearch = (m.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+        const isNotRestricted = !['restricted', 'obsolete'].includes(m.status);
+        const isWpAllowed = allowedMaterialIds ? allowedMaterialIds.includes(m.id) : true;
+        return matchesSearch && isNotRestricted && isWpAllowed;
+    });
 
     // Get selected material and its variants
     const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
@@ -155,7 +205,13 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
 
     const handleSave = async () => {
         if (!name) return alert("Please enter a layup name");
-        if (layers.length === 0) return alert("Add at least one layer");
+        if (!isReference && layers.length === 0) return alert("Add at least one layer");
+
+        if (!layup?.id && isReference) {
+            if (!referenceMaterialId) return alert("Please select an associated material for the reference layup.");
+            if (!selectedProfileId) return alert("Please select a standard for the reference layup.");
+            if (!selectedArchitectureId) return alert("Please select an architecture type for the reference layup.");
+        }
 
         try {
             if (layup?.id) {
@@ -176,13 +232,12 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
 
                 console.log("Calling updateLayup with:", { id: layup.id, status, reason, thickness, weight });
 
-                await useAppStore.getState().updateLayup(layup.id, {
+                await updateLayup(layup.id, {
                     status,
                     restrictionReason: reason,
                     totalThickness: thickness,
                     totalWeight: weight,
-                    isReference: isReference,
-                    materialId: isReference ? referenceMaterialId : undefined // Clear material if not reference
+                    // Note: Immutable fields (isReference, materialId, architectureTypeId, assignedProfileIds) are purposely NOT updated here
                 });
                 console.log("updateLayup completed.");
 
@@ -209,7 +264,10 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                     createdBy: '00000000-0000-0000-0000-000000000000', // WORKAROUND: Force public ownership until RLS migration is verified
                     restrictionReason: undefined,
                     isReference: isReference,
-                    materialId: isReference ? referenceMaterialId : undefined
+                    materialId: (isReference && referenceMaterialId) ? referenceMaterialId : undefined,
+                    architectureTypeId: (isReference && selectedArchitectureId) ? selectedArchitectureId : undefined,
+                    assignedProfileIds: (isReference && selectedProfileId) ? [selectedProfileId] : undefined,
+                    projectIds: initialProjectIds,
                 };
 
                 await addLayup(payload);
@@ -337,148 +395,78 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
 
                 {/* RIGHT: Stacking & Config */}
                 {/* Expand col-span if library is hidden (readonly or lockStructure) */}
-                <div className={`${(!readonly && !lockStructure) ? 'col-span-8' : 'col-span-12'} flex flex-col h-full gap-6 overflow-hidden`}>
-                    {/* Top: Metadata */}
+                <div className={`${(!readonly && !lockStructure) ? 'col-span-8' : 'col-span-12'} flex flex-col h-full gap-4 overflow-hidden`}>
+                    {/* Top: Layup Setup & Metadata */}
                     <Card>
-                        <CardContent className="p-4 grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                {/* Name is LOCKED if exists */}
-                                <label className="text-sm font-medium">Layup Name</label>
-                                {readonly ? (
-                                    <div className="text-sm border rounded-md px-3 py-2 bg-muted/20 text-muted-foreground cursor-not-allowed" title="Name cannot be changed after creation.">
-                                        {name}
-                                    </div>
-                                ) : (
-                                    <Input value={name} onChange={e => setName(e.target.value)} disabled={!!layup} placeholder="e.g. Wing Skin Upper" title={layup ? "Name locked on edit" : ""} />
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                {/* Process is LOCKED if exists */}
-                                <label className="text-sm font-medium">Manufacturing Process</label>
-                                {readonly || layup?.id ? (
-                                    <div className="text-sm border rounded-md px-3 py-2 bg-muted/20 text-muted-foreground cursor-not-allowed" title="Process cannot be changed after creation.">
-                                        {(processes || []).find(p => p.id === processId)?.name || 'None'}
-                                    </div>
-                                ) : (
-                                    <Select value={processId} onValueChange={setProcessId}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Process..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {(processes || []).map(p => (
-                                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                            ))}
-                                            <SelectItem value="none">None</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                )}
-                            </div>
-                            <div className="space-y-2 col-span-2">
-                                <label className="text-sm font-medium">Status</label>
-                                {readonly ? (
-                                    <div className="flex items-center h-10 gap-4">
-                                        <StatusBadge status={status} />
-                                    </div>
-                                ) : (
-                                    <div className="flex gap-4 items-center">
-                                        <Select value={status} onValueChange={(v: any) => setStatus(v)}>
-                                            <SelectTrigger className="w-[180px]">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="active"><StatusBadge status="active" /></SelectItem>
-                                                <SelectItem value="standard"><StatusBadge status="standard" /></SelectItem>
-                                                <SelectItem value="restricted"><StatusBadge status="restricted" /></SelectItem>
-                                                <SelectItem value="obsolete"><StatusBadge status="obsolete" /></SelectItem>
-                                                <SelectItem value="engineering"><StatusBadge status="engineering" /></SelectItem>
-                                            </SelectContent>
-                                        </Select>
-
-
-
-                                        <div className="flex-1 flex justify-end">
-                                            {!readonly && (
-                                                <Button size="sm" onClick={handleSave}>
-                                                    <Save className="h-4 w-4 mr-2" />
-                                                    {layup?.id ? "Update Status" : "Create Layup"}
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Calculated Stats - Subtle Style */}
-                            <div className="col-span-2 pt-3 mt-1 grid grid-cols-3 gap-4">
-                                <div className="flex flex-col items-center">
-                                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Layers</label>
-                                    <div className="text-sm font-medium text-slate-700 dark:text-slate-300 h-9 flex items-center">{layers.length}</div>
-                                </div>
-                                <div className="flex flex-col items-center">
-                                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Thickness</label>
-                                    <div className="flex items-center gap-1 h-8">
-                                        {readonly ? (
-                                            <span className="text-sm font-medium">{thickness.toFixed(3)}</span>
-                                        ) : (
-                                            <Input
-                                                type="number"
-                                                value={thickness}
-                                                onChange={e => setThickness(parseFloat(e.target.value) || 0)}
-                                                className="h-8 w-24 text-center text-xs"
-                                                step={0.001}
-                                            />
-                                        )}
-                                        <span className="text-[10px] text-muted-foreground">mm</span>
-                                    </div>
-                                </div>
-                                <div className="flex flex-col items-center">
-                                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Weight</label>
-                                    <div className="flex items-center gap-1 h-8">
-                                        {readonly ? (
-                                            <span className="text-sm font-medium">{weight.toFixed(0)}</span>
-                                        ) : (
-                                            <Input
-                                                type="number"
-                                                value={weight}
-                                                onChange={e => setWeight(parseFloat(e.target.value) || 0)}
-                                                className="h-8 w-24 text-center text-xs"
-                                                step={1}
-                                            />
-                                        )}
-                                        <span className="text-[10px] text-muted-foreground">g/m²</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Reference Definition Section */}
-                            <div className="col-span-2 pt-4 mt-2 border-t space-y-4">
+                        <CardContent className="p-4 space-y-4">
+                            {/* FIRST: Status & Save Action row */}
+                            <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-2">
                                     <input
                                         type="checkbox"
                                         id="isReference"
                                         checked={isReference}
                                         onChange={(e) => setIsReference(e.target.checked)}
-                                        disabled={readonly}
+                                        disabled={readonly || !!layup?.id} // Immutable once created
                                         className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                                     />
                                     <label
                                         htmlFor="isReference"
-                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                        className="text-sm font-bold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                                     >
                                         Define as Reference Layup for Material
                                     </label>
                                 </div>
 
-                                {isReference && (
-                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                                        <label className="text-sm font-medium">Associated Material</label>
-                                        {readonly ? (
-                                            <div className="text-sm border rounded-md px-3 py-2 bg-muted/20 text-muted-foreground">
+                                <div className="flex gap-4 items-center">
+                                    <label className="text-sm font-medium">Status:</label>
+                                    {readonly ? (
+                                        <div className="flex items-center h-8 gap-4">
+                                            <StatusBadge status={status} />
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <Select value={status} onValueChange={(v: any) => setStatus(v)}>
+                                                <SelectTrigger className="w-[150px] h-8">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="active"><StatusBadge status="active" /></SelectItem>
+                                                    <SelectItem value="standard"><StatusBadge status="standard" /></SelectItem>
+                                                    <SelectItem value="restricted"><StatusBadge status="restricted" /></SelectItem>
+                                                    <SelectItem value="obsolete"><StatusBadge status="obsolete" /></SelectItem>
+                                                    <SelectItem value="engineering"><StatusBadge status="engineering" /></SelectItem>
+                                                </SelectContent>
+                                            </Select>
+
+                                            {!readonly && (
+                                                <Button size="sm" className="h-8" onClick={handleSave}>
+                                                    <Save className="h-4 w-4 mr-2" />
+                                                    {layup?.id ? "Update Status" : "Create Layup"}
+                                                </Button>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Reference Definition Dropdowns */}
+                            {isReference && (
+                                <div className="grid grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-2 border rounded-md p-3 bg-muted/10">
+                                    {/* 1. Material */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium">1. Associated Material</label>
+                                        {readonly || !!layup?.id ? (
+                                            <div className="text-sm border rounded-md px-3 py-1.5 bg-muted/20 text-muted-foreground truncate" title={materials.find(m => m.id === referenceMaterialId)?.name}>
                                                 {referenceMaterialId ? materials.find(m => m.id === referenceMaterialId)?.name : "None"}
                                             </div>
                                         ) : (
-                                            <Select value={referenceMaterialId} onValueChange={setReferenceMaterialId}>
-                                                <SelectTrigger>
+                                            <Select value={referenceMaterialId} onValueChange={(val) => {
+                                                setReferenceMaterialId(val);
+                                                setSelectedProfileId(""); // Reset dependent fields
+                                                setSelectedArchitectureId("");
+                                            }}>
+                                                <SelectTrigger className="h-8 text-xs">
                                                     <SelectValue placeholder="Select Material..." />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -488,11 +476,149 @@ export function LayupStackEditor({ layup, readonly = false, lockStructure = fals
                                                 </SelectContent>
                                             </Select>
                                         )}
-                                        <p className="text-[10px] text-muted-foreground">
-                                            This layup will be available as a context for this material's specifications and test runs.
-                                        </p>
                                     </div>
-                                )}
+
+                                    {/* 2. Standard */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium">2. Requirement Profile</label>
+                                        {readonly || !!layup?.id ? (
+                                            <div className="text-sm border rounded-md px-3 py-1.5 bg-muted/20 text-muted-foreground truncate" title={requirementProfiles.find(p => p.id === selectedProfileId)?.name}>
+                                                {selectedProfileId ? requirementProfiles.find(p => p.id === selectedProfileId)?.name : "None"}
+                                            </div>
+                                        ) : (
+                                            <Select
+                                                value={selectedProfileId}
+                                                onValueChange={(val) => {
+                                                    setSelectedProfileId(val);
+                                                    setSelectedArchitectureId("");
+                                                }}
+                                                disabled={!referenceMaterialId}
+                                            >
+                                                <SelectTrigger className="h-8 text-xs">
+                                                    <SelectValue placeholder={!referenceMaterialId ? "Select Material first" : "Select Standard..."} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {availableProfiles.length === 0 ? (
+                                                        <div className="p-2 text-xs text-muted-foreground text-center">No profiles found for this material.</div>
+                                                    ) : (
+                                                        availableProfiles.map(p => (
+                                                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                                        ))
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                    </div>
+
+                                    {/* 3. Architecture Type */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium">3. Architecture Type</label>
+                                        {readonly || !!layup?.id ? (
+                                            <div className="text-sm border rounded-md px-3 py-1.5 bg-muted/20 text-muted-foreground truncate" title={requirementProfiles.flatMap(p => p.layupArchitectures || []).find(a => a.id === selectedArchitectureId)?.name}>
+                                                {selectedArchitectureId ?
+                                                    (requirementProfiles.flatMap(p => p.layupArchitectures || []).find(a => a.id === selectedArchitectureId)?.name || "Unknown")
+                                                    : "None"}
+                                            </div>
+                                        ) : (
+                                            <Select
+                                                value={selectedArchitectureId}
+                                                onValueChange={setSelectedArchitectureId}
+                                                disabled={!selectedProfileId}
+                                            >
+                                                <SelectTrigger className="h-8 text-xs">
+                                                    <SelectValue placeholder={!selectedProfileId ? "Select Standard first" : "Select Type..."} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {availableArchitectures.length === 0 ? (
+                                                        <div className="p-2 text-xs text-muted-foreground text-center">No architectures defined.</div>
+                                                    ) : (
+                                                        availableArchitectures.map(a => (
+                                                            <SelectItem key={a.id} value={a.id}>
+                                                                {a.name} ({a.layerCount}L, {a.thickness}mm)
+                                                            </SelectItem>
+                                                        ))
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Secondary Metadata */}
+                            <div className="pt-3 border-t grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Layup Name</label>
+                                    {readonly || isReference ? (
+                                        <div className="text-sm border rounded-md px-3 h-8 flex items-center bg-muted/20 text-muted-foreground cursor-not-allowed" title="Name is auto-generated for reference layups.">
+                                            {name}
+                                        </div>
+                                    ) : (
+                                        <Input value={name} onChange={e => setName(e.target.value)} disabled={!!layup} placeholder="e.g. Wing Skin Upper" className="h-8 text-sm" />
+                                    )}
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">Manufacturing Process</label>
+                                    {readonly || layup?.id || isReference ? (
+                                        <div className="text-sm border rounded-md px-3 h-8 flex items-center bg-muted/20 text-muted-foreground cursor-not-allowed" title={isReference ? "Process is implicit for reference layups." : "Process cannot be changed after creation."}>
+                                            {isReference ? "Implicit from Standard" : ((processes || []).find(p => p.id === processId)?.name || 'None')}
+                                        </div>
+                                    ) : (
+                                        <Select value={processId} onValueChange={setProcessId}>
+                                            <SelectTrigger className="h-8 text-sm">
+                                                <SelectValue placeholder="Select Process..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {(processes || []).map(p => (
+                                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                                ))}
+                                                <SelectItem value="none">None</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                </div>
+
+                                {/* Calculated Stats - Subtle Style */}
+                                <div className="col-span-2 grid grid-cols-3 gap-4 mt-2">
+                                    <div className="flex flex-col items-center justify-center p-2 bg-muted/10 rounded-md border border-dashed">
+                                        <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Layers</label>
+                                        <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 mt-1">{layers.length} {isReference && selectedArchitecture?.layerCount && <span className="text-muted-foreground font-normal ml-1">/ {selectedArchitecture.layerCount} required</span>}</div>
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center p-2 bg-muted/10 rounded-md border border-dashed">
+                                        <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Thickness</label>
+                                        <div className="flex items-center gap-1 mt-1">
+                                            {readonly || isReference ? (
+                                                <span className="text-sm font-semibold">{thickness.toFixed(3)}</span>
+                                            ) : (
+                                                <Input
+                                                    type="number"
+                                                    value={thickness}
+                                                    onChange={e => setThickness(parseFloat(e.target.value) || 0)}
+                                                    className="h-6 w-20 text-center text-xs"
+                                                    step={0.001}
+                                                />
+                                            )}
+                                            <span className="text-[10px] text-muted-foreground">mm</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center p-2 bg-muted/10 rounded-md border border-dashed">
+                                        <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Weight</label>
+                                        <div className="flex items-center gap-1 mt-1">
+                                            {readonly || isReference ? (
+                                                <span className="text-sm font-semibold text-muted-foreground" title="Not required for Reference Layup">N/A</span>
+                                            ) : (
+                                                <Input
+                                                    type="number"
+                                                    value={weight}
+                                                    onChange={e => setWeight(parseFloat(e.target.value) || 0)}
+                                                    className="h-6 w-20 text-center text-xs"
+                                                    step={1}
+                                                />
+                                            )}
+                                            {(!readonly && !isReference) && <span className="text-[10px] text-muted-foreground">g/m²</span>}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>

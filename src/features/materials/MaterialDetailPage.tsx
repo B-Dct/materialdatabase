@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutGrid, Box, FileText, ArrowLeft, Pencil, Save, X as XIcon, Trash2, Archive, Layers } from 'lucide-react';
+import { LayoutGrid, Box, FileText, ArrowLeft, Pencil, Save, X as XIcon, Trash2, Archive } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MaterialPropertiesView } from './MaterialPropertiesView';
 import { MaterialSpecifications } from './MaterialSpecifications';
@@ -266,8 +266,8 @@ export function MaterialDetailPage() {
                             </Button>
                         </>
                     ) : (
-                        <Button variant="outline" size="sm" onClick={handleEdit}>
-                            <Pencil className="h-4 w-4 mr-2" /> Edit Material
+                        <Button variant="secondary" size="sm" onClick={handleEdit}>
+                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
                         </Button>
                     )}
                 </div>
@@ -275,8 +275,8 @@ export function MaterialDetailPage() {
 
             {/* Tabs */}
             <Tabs defaultValue="overview" className="flex flex-1 flex-col overflow-hidden">
-                <div className="border-b px-6 bg-muted/20">
-                    <TabsList className="bg-transparent p-0 gap-6">
+                <div className="px-4 border-b shrink-0 bg-muted/20">
+                    <TabsList className="bg-transparent h-12 w-full justify-start gap-6">
                         <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                             <LayoutGrid className="h-4 w-4 mr-2" /> Overview
                         </TabsTrigger>
@@ -467,75 +467,7 @@ export function MaterialDetailPage() {
                             </Card>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Reference Context Column */}
-                            <Card>
-                                <CardHeader>
-                                    <div className="flex items-center justify-between">
-                                        <CardTitle>Reference Context (Engineering)</CardTitle>
-                                        {isEditing && (
-                                            <div className="flex gap-2">
-                                                {/* Add Layup Button */}
-                                                <Select
-                                                    onValueChange={(val) => {
-                                                        const current = formData.assignedReferenceLayupIds || [];
-                                                        if (!current.includes(val)) {
-                                                            handleChange('assignedReferenceLayupIds', [...current, val]);
-                                                        }
-                                                    }}
-                                                >
-                                                    <SelectTrigger className="h-7 w-[130px] text-xs">
-                                                        <SelectValue placeholder="+ Add Layup" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {useAppStore.getState().layups
-                                                            .filter(l => l.isReference)
-                                                            .filter(l => !(formData.assignedReferenceLayupIds || []).includes(l.id))
-                                                            .map(l => (
-                                                                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                                                            ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        )}
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium text-muted-foreground block">Assigned Reference Layups</span>
-                                        {(formData.assignedReferenceLayupIds || material.assignedReferenceLayupIds || []).length > 0 ? (
-                                            <div className="flex flex-wrap gap-2">
-                                                {(formData.assignedReferenceLayupIds || material.assignedReferenceLayupIds || []).map(refId => {
-                                                    const layup = useAppStore.getState().layups.find(l => l.id === refId);
-                                                    if (!layup) return null;
-                                                    return (
-                                                        <Badge key={refId} variant="secondary" className="flex items-center gap-1 pr-1">
-                                                            <Layers className="h-3 w-3 mr-1" />
-                                                            {layup.name}
-                                                            {isEditing && (
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    className="h-4 w-4 ml-1 hover:bg-destructive/20 hover:text-destructive rounded-full"
-                                                                    onClick={() => {
-                                                                        const current = formData.assignedReferenceLayupIds || [];
-                                                                        handleChange('assignedReferenceLayupIds', current.filter(id => id !== refId));
-                                                                    }}
-                                                                >
-                                                                    <XIcon className="h-3 w-3" />
-                                                                </Button>
-                                                            )}
-                                                        </Badge>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : (
-                                            <span className="text-sm text-muted-foreground italic">No Reference Layups assigned.</span>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-
+                        <div>
                             {/* Description Section */}
                             <Card>
                                 <CardHeader>
@@ -582,7 +514,12 @@ export function MaterialDetailPage() {
                     <TabsContent value="properties" className="h-full">
                         <MaterialPropertiesView
                             material={material}
-                            measurements={(measurements || []).filter(m => m.materialId === material.id)}
+                            measurements={(measurements || []).filter(m => {
+                                if (m.materialId === material.id) return true;
+                                if (m.layupId && material.assignedReferenceLayupIds?.includes(m.layupId)) return true;
+                                if (m.referenceLayupId && material.assignedReferenceLayupIds?.includes(m.referenceLayupId)) return true;
+                                return false;
+                            })}
                         />
                     </TabsContent>
 

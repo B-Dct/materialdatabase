@@ -29,7 +29,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Badge } from '@/components/ui/badge';
-
+import { MeasurementHistoryDialog } from '../materials/MeasurementHistoryDialog';
 
 interface LayupPropertiesViewProps {
     layup: Layup;
@@ -100,9 +100,21 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
         return filtered;
     }, [measurements, timeFilter, limitFilter, layup.id]);
 
+    const [historyDialog, setHistoryDialog] = useState<{
+        isOpen: boolean;
+        propertyName: string;
+        unit?: string;
+        testMethod?: string;
+        data: any[];
+    }>({
+        isOpen: false,
+        propertyName: '',
+        data: []
+    });
+
     const statsMap = useMemo(() => {
-        const map = new Map<string, { mean: number, min: number, max: number, count: number }>();
-        const grouped = new Map<string, number[]>();
+        const map = new Map<string, { mean: number, min: number, max: number, count: number, rawData?: any[] }>();
+        const grouped = new Map<string, Measurement[]>();
 
         filteredMeasurements.forEach(m => {
             const propDef = globalProperties.find(pd => pd.id === m.propertyDefinitionId);
@@ -114,18 +126,20 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
             // Keying by Name + Method
             const key = `${name}|${method}`;
             if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key)!.push(m.resultValue);
+            grouped.get(key)!.push(m);
         });
 
-        grouped.forEach((vals, key) => {
-            const valid = vals.filter(v => !isNaN(v));
+        grouped.forEach((measurements, key) => {
+            const valid = measurements.filter(m => !isNaN(m.resultValue));
             if (valid.length > 0) {
-                const sum = valid.reduce((a, b) => a + b, 0);
+                const values = valid.map(m => m.resultValue);
+                const sum = values.reduce((a, b) => a + b, 0);
                 map.set(key, {
                     mean: sum / valid.length,
-                    min: Math.min(...valid),
-                    max: Math.max(...valid),
-                    count: valid.length
+                    min: Math.min(...values),
+                    max: Math.max(...values),
+                    count: valid.length,
+                    rawData: valid.map(m => ({ value: m.resultValue, date: m.date, measurement: m }))
                 });
             }
         });
@@ -142,7 +156,7 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
             unit: string,
             stdValues: Record<string, { min?: number, max?: number, target?: number | string }>, // ProfileID -> Rules
             specValues: Record<string, MaterialProperty>, // SpecID -> Value
-            stats?: { mean: number, min: number, max: number, count: number }
+            stats?: { mean: number, min: number, max: number, count: number, rawData?: any[] }
         }>();
 
         // Helper: Aggressive normalization for method matching (e.g. "ISO-1183" == "ISO 1183")
@@ -305,12 +319,14 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
                                 const combinedMean = ((targetStats.mean * targetStats.count) + (sourceStats.mean * sourceStats.count)) / combinedCount;
                                 const combinedMin = Math.min(targetStats.min, sourceStats.min);
                                 const combinedMax = Math.max(targetStats.max, sourceStats.max);
+                                const combinedRawData = [...(targetStats.rawData || []), ...(sourceStats.rawData || [])];
 
                                 target.stats = {
                                     mean: combinedMean,
                                     min: combinedMin,
                                     max: combinedMax,
-                                    count: combinedCount
+                                    count: combinedCount,
+                                    rawData: combinedRawData.length > 0 ? combinedRawData : undefined
                                 };
                             }
                         }
@@ -452,13 +468,13 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
                             <TableHeader className="sticky top-0 bg-background z-20 shadow-sm">
                                 <TableRow>
                                     <TableHead className="w-[20px] bg-background"></TableHead>
-                                    <TableHead className="w-[200px] bg-background font-bold">Property</TableHead>
-                                    <TableHead className="w-[150px] bg-background font-bold border-r">Method</TableHead>
+                                    <TableHead className="min-w-[250px] w-[250px] max-w-[250px] bg-background font-bold">Property</TableHead>
+                                    <TableHead className="min-w-[150px] w-[150px] max-w-[150px] bg-background font-bold border-r">Method</TableHead>
 
                                     {/* Profiles (Standards) */}
                                     {visibleProfiles.map(p => (
-                                        <TableHead key={p.id} className="min-w-[180px] border-l bg-blue-50/50 text-center relative group">
-                                            <div className="flex flex-col items-center py-2">
+                                        <TableHead key={p.id} className="border-l bg-blue-50/50 text-center relative group">
+                                            <div className="flex flex-col items-center py-2 min-w-[150px]">
                                                 <Badge variant="secondary" className="mb-1 text-[10px] bg-blue-100/50 text-blue-700 hover:bg-blue-100 border-none px-1 py-0 h-4">STANDARD</Badge>
                                                 <span className="truncate w-full block font-semibold text-blue-900">{p.name}</span>
                                             </div>
@@ -467,8 +483,8 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
 
                                     {/* Specifications */}
                                     {visibleSpecs.map(s => (
-                                        <TableHead key={s.id} className="min-w-[150px] border-l bg-purple-50/50 text-center relative group">
-                                            <div className="flex flex-col items-center py-2">
+                                        <TableHead key={s.id} className="border-l bg-purple-50/50 text-center relative group">
+                                            <div className="flex flex-col items-center py-2 min-w-[150px]">
                                                 <Badge variant="secondary" className="mb-1 text-[10px] bg-purple-100/50 text-purple-700 hover:bg-purple-100 border-none px-1 py-0 h-4">SPEC</Badge>
                                                 <span className="truncate w-full block font-semibold text-purple-900">{s.code || s.name}</span>
                                                 {s.code && s.name && <span className="truncate w-full block text-[10px] text-purple-700/70 font-normal">{s.name}</span>}
@@ -476,7 +492,7 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
                                         </TableHead>
                                     ))}
 
-                                    <TableHead className="min-w-[150px] border-l bg-green-50/50 text-center">
+                                    <TableHead className="border-l bg-green-50/50 text-center min-w-[150px]">
                                         Tests (Actual)
                                     </TableHead>
                                     <TableHead className="w-[20px] bg-background"></TableHead>
@@ -550,7 +566,20 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
                                             })}
 
                                             {/* Test Stats */}
-                                            <TableCell className="border-l bg-green-50/20 p-2 align-middle text-center">
+                                            <TableCell
+                                                className={`border-l p-2 align-middle text-center ${stats && stats.rawData && stats.rawData.length > 0 ? 'bg-green-50/50 cursor-pointer hover:bg-green-100/50 hover:shadow-inner transition-all' : 'bg-green-50/20'}`}
+                                                onClick={() => {
+                                                    if (stats && stats.rawData && stats.rawData.length > 0) {
+                                                        setHistoryDialog({
+                                                            isOpen: true,
+                                                            propertyName: row.name,
+                                                            unit: row.unit,
+                                                            testMethod: row.method,
+                                                            data: stats.rawData
+                                                        });
+                                                    }
+                                                }}
+                                            >
                                                 {stats ? (
                                                     <div className="flex flex-col items-center justify-center gap-0.5">
                                                         <span className="font-bold text-base text-green-900">{stats.mean.toFixed(2)}</span>
@@ -572,6 +601,16 @@ export function LayupPropertiesView({ layup, measurements }: LayupPropertiesView
                     </div>
                 </div>
             </Card>
+
+            <MeasurementHistoryDialog
+                isOpen={historyDialog.isOpen}
+                onClose={() => setHistoryDialog(prev => ({ ...prev, isOpen: false }))}
+                propertyName={historyDialog.propertyName}
+                contextName={layup.name}
+                unit={historyDialog.unit}
+                testMethod={historyDialog.testMethod}
+                data={historyDialog.data}
+            />
         </div>
     );
 }

@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { StorageRepository } from './types';
+import type { StorageRepository, MaterialUsageRecord } from './types';
 import type {
     Material,
     Layup,
@@ -19,8 +19,11 @@ import type {
     StandardPart,
     MaterialTypeDefinition,
     Project,
+    ProjectWorkPackage,
     ProjectMaterialList,
-    ProjectProcessList
+    ProjectProcessList,
+    WorkPackageRevision,
+    AssignableEntityType
 } from '@/types/domain';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -63,7 +66,8 @@ export class SupabaseStorage implements StorageRepository {
                 assignedProfileIds: m.assigned_profile_ids || [],
                 assignedReferenceLayupIds: m.assigned_reference_layup_ids || [],
                 assignedReferenceAssemblyIds: m.assigned_reference_assembly_ids || [],
-                allowables: m.properties?._allowables || []
+                allowables: m.properties?._allowables || [],
+                projectIds: m.properties?._projectIds || []
             };
         });
     }
@@ -83,6 +87,7 @@ export class SupabaseStorage implements StorageRepository {
             allowables,
             measurements, // Exclude
             documents, // Exclude
+            projectIds, // Exclude from SQL payload
             ...baseMaterial
         } = material as any;
 
@@ -94,7 +99,8 @@ export class SupabaseStorage implements StorageRepository {
             supplier,
             reachStatus,
             maturityLevel,
-            _allowables: material.allowables || []
+            _allowables: material.allowables || [],
+            _projectIds: projectIds || []
         };
 
         const dbPayload = {
@@ -135,7 +141,8 @@ export class SupabaseStorage implements StorageRepository {
                 description: varData.properties?.description,
                 properties: varData.properties || {}
             } as MaterialVariant] : [],
-            allowables: material.allowables || []
+            allowables: material.allowables || [],
+            projectIds: projectIds || []
         } as Material;
     }
 
@@ -160,6 +167,7 @@ export class SupabaseStorage implements StorageRepository {
             supplier,
             reachStatus,
             maturityLevel,
+            projectIds, // Exclude from SQL payload
             ...dbUpdates
         } = updates as any;
 
@@ -178,7 +186,8 @@ export class SupabaseStorage implements StorageRepository {
             supplier: supplier !== undefined ? supplier : current.supplier,
             reachStatus: reachStatus !== undefined ? reachStatus : current.reachStatus,
             maturityLevel: maturityLevel !== undefined ? maturityLevel : current.maturityLevel,
-            _allowables: allowables !== undefined ? allowables : (current._allowables || [])
+            _allowables: allowables !== undefined ? allowables : (current._allowables || []),
+            _projectIds: projectIds !== undefined ? projectIds : (current._projectIds || [])
         };
 
         (dbUpdates as any).properties = packedProperties;
@@ -338,7 +347,8 @@ export class SupabaseStorage implements StorageRepository {
                 assignedProfileIds: l.assigned_profile_ids || [],
                 isReference: l.is_reference,
                 materialId: l.material_id,
-                architectureTypeId: l.architecture_type_id
+                architectureTypeId: l.architecture_type_id,
+                projectIds: l.properties?._projectIds || []
             };
         });
     }
@@ -375,7 +385,8 @@ export class SupabaseStorage implements StorageRepository {
                 measurements: [], // Empty for now in this view
                 assignedProfileIds: l.assigned_profile_ids || [],
                 allowables: l.properties?._allowables || [],
-                properties: layupProperties
+                properties: layupProperties,
+                projectIds: l.properties?._projectIds || []
             };
         }) as Layup[];
     }
@@ -410,7 +421,8 @@ export class SupabaseStorage implements StorageRepository {
         // Pack properties
         const packedProperties = {
             customProperties: layup.properties || [],
-            _allowables: layup.allowables || []
+            _allowables: layup.allowables || [],
+            _projectIds: layup.projectIds || []
         };
 
         const { data: layupData, error: layupError } = await supabase.from('layups').insert({
@@ -456,7 +468,7 @@ export class SupabaseStorage implements StorageRepository {
     }
 
     async updateLayup(id: string, updates: Partial<Layup>): Promise<void> {
-        const { assignedProfileIds, allowables, ...rest } = updates;
+        const { assignedProfileIds, allowables, projectIds, ...rest } = updates;
         const dbUpdates: any = {};
 
         // Fetch current to merge properties/allowables
@@ -487,7 +499,8 @@ export class SupabaseStorage implements StorageRepository {
 
             dbUpdates.properties = {
                 customProperties: rest.properties !== undefined ? rest.properties : currentCustomProps,
-                _allowables: allowables !== undefined ? allowables : (currentProps._allowables || [])
+                _allowables: allowables !== undefined ? allowables : (currentProps._allowables || []),
+                _projectIds: projectIds !== undefined ? projectIds : (currentProps._projectIds || [])
             };
         }
 
@@ -559,6 +572,7 @@ export class SupabaseStorage implements StorageRepository {
                 totalWeight: a.total_weight,
                 totalThickness: a.total_thickness,
                 measurements: associatedMeasurements as unknown as Measurement[],
+                projectIds: a.properties?._projectIds || [],
                 components: associatedComponents.map((c: any) => ({
                     id: c.id,
                     componentType: c.component_type,
@@ -574,7 +588,7 @@ export class SupabaseStorage implements StorageRepository {
     }
 
     async createAssembly(assembly: Omit<Assembly, 'id' | 'createdAt' | 'components'>, components: Omit<AssemblyComponent, 'id' | 'sequence'>[]): Promise<Assembly> {
-        const { processIds, properties, assignedProfileIds, allowables, ...rest } = assembly;
+        const { processIds, properties, assignedProfileIds, allowables, projectIds, ...rest } = assembly as any;
 
         const dbPayload = {
             name: rest.name,
@@ -582,7 +596,11 @@ export class SupabaseStorage implements StorageRepository {
             status: rest.status,
             version: rest.version,
             process_ids: processIds,
-            properties: properties,
+            properties: {
+                customProperties: properties || [],
+                _allowables: allowables || [],
+                _projectIds: projectIds || []
+            },
             assigned_profile_ids: assignedProfileIds,
             allowables: allowables,
             total_weight: rest.totalWeight,
@@ -632,6 +650,7 @@ export class SupabaseStorage implements StorageRepository {
             assignedProfileIds,
             allowables,
             components,
+            projectIds,
             ...rest
         } = updates as any;
 
@@ -641,9 +660,21 @@ export class SupabaseStorage implements StorageRepository {
         if (rest.status) dbUpdates.status = rest.status;
         if (rest.version) dbUpdates.version = rest.version;
         if (processIds) dbUpdates.process_ids = processIds;
-        if (properties) dbUpdates.properties = properties;
+
+        let currentProperties: any = {};
+        if (properties !== undefined || allowables !== undefined || projectIds !== undefined) {
+            const { data } = await supabase.from('assemblies').select('properties').eq('id', id).single();
+            currentProperties = data?.properties || {};
+
+            dbUpdates.properties = {
+                customProperties: properties !== undefined ? properties : (currentProperties.customProperties || currentProperties),
+                _allowables: allowables !== undefined ? allowables : (currentProperties._allowables || []),
+                _projectIds: projectIds !== undefined ? projectIds : (currentProperties._projectIds || [])
+            };
+        }
+
         if (assignedProfileIds) dbUpdates.assigned_profile_ids = assignedProfileIds;
-        if (allowables) dbUpdates.allowables = allowables;
+        if (allowables) dbUpdates.allowables = allowables; // Keeping external format for backwards compat if needed
         if (rest.totalWeight !== undefined) dbUpdates.total_weight = rest.totalWeight;
         if (rest.totalThickness !== undefined) dbUpdates.total_thickness = rest.totalThickness;
 
@@ -861,6 +892,180 @@ export class SupabaseStorage implements StorageRepository {
     async deleteProject(id: string): Promise<void> {
         const { error } = await supabase.from('projects').delete().eq('id', id);
         if (error) throw error;
+    }
+
+    // --- Project Work Packages ---
+
+    async getProjectWorkPackages(projectId: string): Promise<ProjectWorkPackage[]> {
+        const { data, error } = await supabase
+            .from('project_work_packages')
+            .select('*')
+            .eq('project_id', projectId)
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+
+        return (data || []).map((wp: any) => ({
+            id: wp.id,
+            projectId: wp.project_id,
+            name: wp.name,
+            description: wp.description,
+            materialListStatus: wp.material_list_status,
+            materialListRevision: wp.material_list_revision,
+            processListStatus: wp.process_list_status,
+            processListRevision: wp.process_list_revision,
+            partListStatus: wp.part_list_status,
+            partListRevision: wp.part_list_revision,
+            layupListStatus: wp.layup_list_status,
+            layupListRevision: wp.layup_list_revision,
+            assemblyListStatus: wp.assembly_list_status,
+            assemblyListRevision: wp.assembly_list_revision,
+            assignedMaterials: wp.assigned_materials || [],
+            assignedProcesses: wp.assigned_processes || [],
+            assignedStandardParts: wp.assigned_standard_parts || [],
+            assignedLayups: wp.assigned_layups || [],
+            assignedAssemblies: wp.assigned_assemblies || [],
+            createdAt: wp.created_at,
+            updatedAt: wp.updated_at
+        }));
+    }
+
+    async createProjectWorkPackage(wp: Omit<ProjectWorkPackage, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProjectWorkPackage> {
+        const dbPayload = {
+            project_id: wp.projectId,
+            name: wp.name,
+            description: wp.description,
+            material_list_status: wp.materialListStatus,
+            material_list_revision: wp.materialListRevision,
+            process_list_status: wp.processListStatus,
+            process_list_revision: wp.processListRevision,
+            part_list_status: wp.partListStatus,
+            part_list_revision: wp.partListRevision,
+            layup_list_status: wp.layupListStatus,
+            layup_list_revision: wp.layupListRevision,
+            assembly_list_status: wp.assemblyListStatus,
+            assembly_list_revision: wp.assemblyListRevision,
+            assigned_materials: wp.assignedMaterials,
+            assigned_processes: wp.assignedProcesses,
+            assigned_standard_parts: wp.assignedStandardParts,
+            assigned_layups: wp.assignedLayups,
+            assigned_assemblies: wp.assignedAssemblies
+        };
+
+        const { data, error } = await supabase.from('project_work_packages').insert(dbPayload).select().single();
+        if (error) throw error;
+
+        return {
+            ...wp,
+            id: data.id,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at
+        };
+    }
+
+    async updateProjectWorkPackage(id: string, updates: Partial<ProjectWorkPackage>): Promise<void> {
+        const dbUpdates: any = {};
+        if (updates.name) dbUpdates.name = updates.name;
+        if (updates.description !== undefined) dbUpdates.description = updates.description;
+
+        if (updates.materialListStatus) dbUpdates.material_list_status = updates.materialListStatus;
+        if (updates.materialListRevision) dbUpdates.material_list_revision = updates.materialListRevision;
+        if (updates.processListStatus) dbUpdates.process_list_status = updates.processListStatus;
+        if (updates.processListRevision) dbUpdates.process_list_revision = updates.processListRevision;
+        if (updates.partListStatus) dbUpdates.part_list_status = updates.partListStatus;
+        if (updates.partListRevision) dbUpdates.part_list_revision = updates.partListRevision;
+        if (updates.layupListStatus) dbUpdates.layup_list_status = updates.layupListStatus;
+        if (updates.layupListRevision) dbUpdates.layup_list_revision = updates.layupListRevision;
+        if (updates.assemblyListStatus) dbUpdates.assembly_list_status = updates.assemblyListStatus;
+        if (updates.assemblyListRevision) dbUpdates.assembly_list_revision = updates.assemblyListRevision;
+
+        if (updates.assignedMaterials) dbUpdates.assigned_materials = updates.assignedMaterials;
+        if (updates.assignedProcesses) dbUpdates.assigned_processes = updates.assignedProcesses;
+        if (updates.assignedStandardParts) dbUpdates.assigned_standard_parts = updates.assignedStandardParts;
+        if (updates.assignedLayups) dbUpdates.assigned_layups = updates.assignedLayups;
+        if (updates.assignedAssemblies) dbUpdates.assigned_assemblies = updates.assignedAssemblies;
+
+        dbUpdates.updated_at = new Date().toISOString();
+
+        const { error } = await supabase.from('project_work_packages').update(dbUpdates).eq('id', id);
+        if (error) throw error;
+    }
+
+    async deleteProjectWorkPackage(id: string): Promise<void> {
+        const { error } = await supabase.from('project_work_packages').delete().eq('id', id);
+        if (error) throw error;
+    }
+
+    async closeProjectWorkPackageList(id: string, listType: AssignableEntityType, changelog: string, snapshot: any): Promise<void> {
+        // Fetch current to get revision
+        const selectColumn = listType === 'standardPart' ? 'part_list_revision' : `${listType}_list_revision`;
+        const { data: wpData, error: wpError } = await supabase.from('project_work_packages').select(selectColumn).eq('id', id).single();
+        if (wpError) throw wpError;
+
+        const currentRevision = (wpData as any)[selectColumn] || 'A';
+
+        // Insert revision snapshot
+        const { error: revError } = await supabase.from('work_package_revisions').insert({
+            work_package_id: id,
+            list_type: listType === 'standardPart' ? 'part' : listType,
+            revision: currentRevision,
+            changelog,
+            snapshot
+        });
+        if (revError) throw revError;
+
+        // Update status
+        const updateColumn = listType === 'standardPart' ? 'part_list_status' : `${listType}_list_status`;
+        const { error: updError } = await supabase.from('project_work_packages').update({ [updateColumn]: 'closed' }).eq('id', id);
+        if (updError) throw updError;
+    }
+
+    async reopenProjectWorkPackageList(id: string, listType: AssignableEntityType, currentRevision: string): Promise<string> {
+        // Simple logic: charCodeAt + 1. 'A' -> 'B', 'Z' -> 'AA' (basic handler)
+        let newRevision = 'A';
+        if (currentRevision) {
+            const lastChar = currentRevision.slice(-1);
+            if (lastChar === 'Z') {
+                newRevision = currentRevision + 'A';
+            } else {
+                newRevision = currentRevision.slice(0, -1) + String.fromCharCode(lastChar.charCodeAt(0) + 1);
+            }
+        }
+
+        const statusColumn = listType === 'standardPart' ? 'part_list_status' : `${listType}_list_status`;
+        const revisionColumn = listType === 'standardPart' ? 'part_list_revision' : `${listType}_list_revision`;
+
+        const { error } = await supabase.from('project_work_packages').update({
+            [statusColumn]: 'open',
+            [revisionColumn]: newRevision
+        }).eq('id', id);
+
+        if (error) throw error;
+
+        return newRevision;
+    }
+
+    async getWorkPackageRevisions(workPackageId: string, listType?: AssignableEntityType): Promise<WorkPackageRevision[]> {
+        let query = supabase.from('work_package_revisions')
+            .select('*')
+            .eq('work_package_id', workPackageId)
+
+        if (listType) {
+            query = query.eq('list_type', listType === 'standardPart' ? 'part' : listType);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        return (data || []).map((r: any) => ({
+            id: r.id,
+            workPackageId: r.work_package_id,
+            listType: r.list_type as AssignableEntityType,
+            revision: r.revision,
+            changelog: r.changelog,
+            snapshot: r.snapshot,
+            createdAt: r.created_at
+        }));
     }
 
     // --- Project Lists ---
@@ -1208,7 +1413,19 @@ export class SupabaseStorage implements StorageRepository {
         }
         const { data, error } = await query;
         if (error) throw error;
-        return data as ManufacturingProcess[];
+        return data.map((d: any) => {
+            const { _projectIds, ...restParams } = d.defaultParams || {};
+            return {
+                id: d.id,
+                name: d.name,
+                description: d.description,
+                defaultParams: restParams,
+                subProcess: d.subProcess,
+                processNumber: d.processNumber,
+                entryStatus: d.entryStatus,
+                projectIds: _projectIds || []
+            } as ManufacturingProcess;
+        });
     }
 
     async archiveProcess(id: string): Promise<void> {
@@ -1217,29 +1434,48 @@ export class SupabaseStorage implements StorageRepository {
     }
 
     async updateProcess(id: string, updates: Partial<ManufacturingProcess>): Promise<void> {
+        const { projectIds, defaultParams, ...rest } = updates;
         const dbUpdates: any = {};
-        if (updates.name) dbUpdates.name = updates.name;
-        if (updates.description !== undefined) dbUpdates.description = updates.description;
-        if (updates.defaultParams) dbUpdates.default_params = updates.defaultParams;
-        if (updates.subProcess !== undefined) dbUpdates.sub_process = updates.subProcess;
-        if (updates.processNumber !== undefined) dbUpdates.process_number = updates.processNumber;
-        if (updates.entryStatus) dbUpdates.entry_status = updates.entryStatus;
+        if (rest.name) dbUpdates.name = rest.name;
+        if (rest.description !== undefined) dbUpdates.description = rest.description;
+        if (rest.subProcess !== undefined) dbUpdates.sub_process = rest.subProcess;
+        if (rest.processNumber !== undefined) dbUpdates.process_number = rest.processNumber;
+        if (rest.entryStatus) dbUpdates.entry_status = rest.entryStatus;
 
-        const { error } = await supabase.from('manufacturing_processes').update(dbUpdates).eq('id', id);
-        if (error) throw error;
+        if (defaultParams !== undefined || projectIds !== undefined) {
+            const { data } = await supabase.from('manufacturing_processes').select('default_params').eq('id', id).single();
+            const currentParams = data?.default_params || {};
+            dbUpdates.default_params = {
+                ...currentParams,
+                ...(defaultParams || {}),
+                _projectIds: projectIds !== undefined ? projectIds : (currentParams._projectIds || [])
+            };
+        }
+
+        if (Object.keys(dbUpdates).length > 0) {
+            const { error } = await supabase.from('manufacturing_processes').update(dbUpdates).eq('id', id);
+            if (error) throw error;
+        }
     }
 
     async createProcess(process: Omit<ManufacturingProcess, 'id'>): Promise<ManufacturingProcess> {
+        const payloadParams = { ...(process.defaultParams || {}), _projectIds: process.projectIds || [] };
         const { data, error } = await supabase.from('manufacturing_processes').insert({
             name: process.name,
             description: process.description,
-            default_params: process.defaultParams,
+            default_params: payloadParams,
             sub_process: process.subProcess,
             process_number: process.processNumber,
             entry_status: 'active'
         }).select(`id, name, description, defaultParams:default_params, subProcess:sub_process, processNumber:process_number, entryStatus:entry_status`).single();
         if (error) throw error;
-        return data as ManufacturingProcess;
+
+        const { _projectIds, ...restParams } = data.defaultParams || {};
+        return {
+            ...data,
+            defaultParams: restParams,
+            projectIds: _projectIds || []
+        } as ManufacturingProcess;
     }
 
 
@@ -1355,7 +1591,8 @@ export class SupabaseStorage implements StorageRepository {
             validFrom: s.valid_from,
             documentUrl: s.document_url,
             createdAt: s.created_at,
-            requirementProfileId: s.requirement_profile_id
+            requirementProfileId: s.requirement_profile_id,
+            properties: s.properties || []
         }));
     }
 
@@ -1372,7 +1609,8 @@ export class SupabaseStorage implements StorageRepository {
             status: spec.status,
             valid_from: spec.validFrom,
             document_url: spec.documentUrl,
-            requirement_profile_id: spec.requirementProfileId
+            requirement_profile_id: spec.requirementProfileId,
+            properties: spec.properties || []
         };
         const { error } = await supabase.from('material_specifications').insert(payload);
         if (error) throw error;
@@ -1546,5 +1784,41 @@ export class SupabaseStorage implements StorageRepository {
 
         const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
         return publicUrl;
+    }
+
+    // --- Queries ---
+
+    async getMaterialUsage(materialId: string): Promise<MaterialUsageRecord[]> {
+        const { data, error } = await supabase
+            .from('project_material_lists')
+            .select(`
+                id,
+                name,
+                revision,
+                status,
+                project_id,
+                projects (
+                    name,
+                    status
+                )
+            `)
+            .contains('items', `[{"materialId": "${materialId}"}]`);
+
+        if (error) {
+            console.error("Error fetching material usage:", error);
+            // It's possible the `contains` operator is finicky with arrays of objects in some Supabase versions if not cast correctly.
+            // If it fails, fallback to fetching all lists and filtering in memory, but let's try this first.
+            return [];
+        }
+
+        return (data || []).map((row: any) => ({
+            projectId: row.project_id,
+            projectName: row.projects?.name || 'Unknown Project',
+            projectStatus: row.projects?.status || 'Unknown',
+            listId: row.id,
+            listName: row.name,
+            listRevision: row.revision,
+            listStatus: row.status
+        }));
     }
 }

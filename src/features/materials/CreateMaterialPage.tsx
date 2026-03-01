@@ -7,13 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ChevronLeft, Save } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import type { Material, EntityStatus } from "@/types/domain";
 
 export function CreateMaterialPage() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const projectId = new URLSearchParams(location.search).get('projectId');
     const { addMaterial, materialTypes, fetchMaterialTypes, materials, fetchMaterials } = useAppStore();
     const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +31,7 @@ export function CreateMaterialPage() {
         maturityLevel: 1,
         description: "",
         status: "active" as EntityStatus,
+        projectIds: projectId ? [projectId] : [],
     });
 
     useEffect(() => {

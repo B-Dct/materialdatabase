@@ -16,9 +16,22 @@ import type {
     StandardPart,
     MaterialTypeDefinition,
     Project,
+    ProjectWorkPackage,
     ProjectMaterialList,
-    ProjectProcessList
+    ProjectProcessList,
+    WorkPackageRevision,
+    AssignableEntityType
 } from '@/types/domain';
+
+export interface MaterialUsageRecord {
+    projectId: string;
+    projectName: string;
+    projectStatus: string;
+    listId: string;
+    listName: string;
+    listRevision: string;
+    listStatus: string;
+}
 
 export interface StorageRepository {
     // Materials
@@ -122,7 +135,16 @@ export interface StorageRepository {
     updateProject(id: string, updates: Partial<Project>): Promise<void>;
     deleteProject(id: string): Promise<void>;
 
-    // Project Lists
+    // Project Work Packages
+    getProjectWorkPackages(projectId: string): Promise<ProjectWorkPackage[]>;
+    createProjectWorkPackage(wp: Omit<ProjectWorkPackage, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProjectWorkPackage>;
+    updateProjectWorkPackage(id: string, updates: Partial<ProjectWorkPackage>): Promise<void>;
+    deleteProjectWorkPackage(id: string): Promise<void>;
+    closeProjectWorkPackageList(id: string, listType: AssignableEntityType, changelog: string, snapshot: any): Promise<void>;
+    reopenProjectWorkPackageList(id: string, listType: AssignableEntityType, currentRevision: string): Promise<string>;
+    getWorkPackageRevisions(workPackageId: string, listType?: AssignableEntityType): Promise<WorkPackageRevision[]>;
+
+    // Project Lists (Deprecated but kept for compat)
     getProjectLists(projectId: string): Promise<{ materialLists: ProjectMaterialList[], processLists: ProjectProcessList[] }>;
 
     // Material Lists
@@ -134,4 +156,7 @@ export interface StorageRepository {
     createProcessList(list: Omit<ProjectProcessList, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProjectProcessList>;
     updateProcessList(id: string, updates: Partial<ProjectProcessList>): Promise<void>;
     deleteProcessList(id: string): Promise<void>;
+
+    // Queries
+    getMaterialUsage(materialId: string): Promise<MaterialUsageRecord[]>;
 }

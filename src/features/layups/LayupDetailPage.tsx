@@ -9,7 +9,7 @@ import {
     TabsList,
     TabsTrigger,
 } from "@/components/ui/tabs";
-import { ArrowLeft, LayoutGrid, ShieldCheck, Box, Scale, Ruler, BarChart2, FileText } from 'lucide-react';
+import { ArrowLeft, LayoutGrid, ShieldCheck, Box, Scale, Ruler, BarChart2, FileText, Pencil, Archive, Trash2 } from 'lucide-react';
 import { LayupStackEditor } from './LayupStackEditor';
 import { LayupStatistics } from './LayupStatistics';
 import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
@@ -24,7 +24,7 @@ import { LayupSpecifications } from './LayupSpecifications';
 import { useNavigate } from 'react-router-dom';
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import type { ReferenceLayupArchitecture } from "@/types/domain";
 
 export function LayupDetailPage() {
@@ -165,10 +165,7 @@ export function LayupDetailPage() {
         return archs;
     })();
 
-    const handleUpdateArchitecture = async (archId: string) => {
-        if (!layup) return;
-        await updateLayup(layup.id, { architectureTypeId: archId });
-    };
+    // handleUpdateArchitecture removed as architecture type is now immutable
 
     // View Settings
     const [showMeasurementsTab, setShowMeasurementsTab] = useState(true);
@@ -212,34 +209,12 @@ export function LayupDetailPage() {
                             {!isReferenceLayup && <span>Process: {layup.processId || 'None'}</span>}
                             <span>{layup.layers?.length || 0} Layers</span>
 
-                            {/* Architecture Dropdown - Enable for all layups when editing */}
-                            {isEditing ? (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground">Type:</span>
-                                    <Select
-                                        value={layup.architectureTypeId || "none"}
-                                        onValueChange={(val) => handleUpdateArchitecture(val === "none" ? "" : val)}
-                                    >
-                                        <SelectTrigger className="h-7 w-[180px] text-xs">
-                                            <SelectValue placeholder="Select Type..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="none">None</SelectItem>
-                                            {availableArchitectures.map(arch => (
-                                                <SelectItem key={arch.id} value={arch.id}>
-                                                    {arch.name} ({arch.layerCount}L)
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            ) : (
-                                layup.architectureTypeId && (
-                                    <span className="flex items-center gap-1 border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">
-                                        <ShieldCheck className="h-3 w-3" />
-                                        {availableArchitectures.find(a => a.id === layup.architectureTypeId)?.name || "Unknown Type"}
-                                    </span>
-                                )
+                            {/* Architecture Display - Immutable */}
+                            {layup.architectureTypeId && (
+                                <span className="flex items-center gap-1 border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">
+                                    <ShieldCheck className="h-3 w-3" />
+                                    {availableArchitectures.find(a => a.id === layup.architectureTypeId)?.name || "Unknown Type"}
+                                </span>
                             )}
                         </div>
                     </div>
@@ -258,7 +233,7 @@ export function LayupDetailPage() {
                                 onClick={() => setArchiveOpen(true)}
                                 className="border-destructive/50 hover:bg-destructive/10 text-destructive h-8"
                             >
-                                Archive
+                                <Archive className="mr-2 h-4 w-4" /> Archive
                             </Button>
 
                             <TooltipProvider>
@@ -272,7 +247,7 @@ export function LayupDetailPage() {
                                                 className="h-8"
                                                 disabled={isInUse}
                                             >
-                                                Delete
+                                                <Trash2 className="mr-2 h-4 w-4" /> Delete
                                             </Button>
                                         </span>
                                     </TooltipTrigger>
@@ -291,7 +266,7 @@ export function LayupDetailPage() {
                         </>
                     ) : (
                         <Button onClick={() => setIsEditing(true)}>
-                            Edit Details
+                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
                         </Button>
                     )}
                 </div>

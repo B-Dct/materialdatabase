@@ -1,4 +1,6 @@
-export type EntityStatus = "active" | "standard" | "restricted" | "obsolete" | "engineering";
+export type EntityStatus = "draft" | "active" | "standard" | "restricted" | "obsolete" | "engineering";
+
+export type AssignableEntityType = 'material' | 'process' | 'standardPart' | 'layup' | 'assembly';
 
 export interface StandardPart {
     id: string;
@@ -24,6 +26,7 @@ export interface ManufacturingProcess {
     subProcess?: string;
     processNumber?: string;
     entryStatus?: 'active' | 'archived';
+    projectIds?: string[]; // Links to assigned projects
 }
 
 export interface TestMethodPropertyConfig {
@@ -49,6 +52,7 @@ export interface PropertyDefinition {
     options?: string[]; // Allowable values for text/enum types
     category: "mechanical" | "chemical" | "physical";
     scope?: "material" | "layup" | "assembly"; // Default 'material'
+    defaultTestMethodId?: string; // Important for implicit requirements mapping
     statsConfig?: {
         calculateBasic: boolean;
         calculateBBasis: boolean;
@@ -77,6 +81,7 @@ export interface RequirementRule {
     target?: number | string;
     unit?: string;
     method?: string; // e.g. "ISO 527-4"
+    testMethodId?: string; // System link to TestMethod
     scope?: 'material' | 'layup'; // Default 'material'
     referenceArchitectureId?: string; // ID of ReferenceLayupArchitecture
     referenceLayupId?: string; // For backward compatibility / specific layup instance
@@ -150,6 +155,7 @@ export interface Measurement {
     // QC Fields
     reliability?: "allowable" | "engineering" | "feasibility";
     testMethod?: string; // Snapshot of method used
+    testMethodId?: string; // Link to active TestMethod
 
     attachments?: MaterialDocument[];
     createdAt?: string;
@@ -161,6 +167,7 @@ export interface MaterialProperty {
     value: string | number;
     unit: string;
     method?: string; // Selected test method (e.g. ISO 527-4)
+    testMethodId?: string; // Link to active TestMethod ID
     referenceLayupId?: string; // Context: Reference Layup used (Concrete)
     referenceArchitectureId?: string; // Context: Reference Architecture (Abstract, from Profile)
     specification: string; // DEPRECATED: Use specificationId
@@ -230,6 +237,7 @@ export interface Material {
     measurements?: Measurement[]; // Actual lab results
     documents?: MaterialDocument[]; // Replaces simple datasheets
     variants?: MaterialVariant[];
+    projectIds?: string[]; // Links to assigned projects
     createdAt: string;
     updatedAt: string;
 
@@ -280,6 +288,7 @@ export interface Layup {
 
     version: number; // Incremented on "edit" (which creates new ID actually, but tracks lineage)
     previousVersionId?: string;
+    projectIds?: string[]; // Links to assigned projects
 
     createdAt: string;
     createdBy: string;
@@ -332,6 +341,7 @@ export interface Assembly {
 
     createdAt: string;
     version: number;
+    projectIds?: string[]; // Links to assigned projects
 
     // Manual Fields
     totalWeight?: number;
@@ -353,13 +363,13 @@ export type ListStatus = 'draft' | 'frozen' | 'obsolete';
 export interface ProjectMaterialListItem {
     id: string; // generated UUID for the list item itself
     materialId: string;
-    variantId: string;
-    quantity: number;
-    unit?: string;
+    standardId?: string;
+    specificationId?: string;
     notes?: string;
     // Snapshot data (captured at time of freeze/add)
     materialName?: string;
-    variantName?: string;
+    standardName?: string;
+    specificationName?: string;
     materialNumber?: string;
 }
 
@@ -395,6 +405,45 @@ export interface ProjectProcessList {
     createdBy?: string;
 }
 
+export interface ProjectWorkPackage {
+    id: string;
+    projectId: string;
+    name: string;
+    description?: string;
+
+    // Per-List Status and Revisions
+    materialListStatus: 'open' | 'closed';
+    materialListRevision: string;
+    processListStatus: 'open' | 'closed';
+    processListRevision: string;
+    partListStatus: 'open' | 'closed';
+    partListRevision: string;
+    layupListStatus: 'open' | 'closed';
+    layupListRevision: string;
+    assemblyListStatus: 'open' | 'closed';
+    assemblyListRevision: string;
+
+    // Entity Assignments
+    assignedMaterials: { materialId: string, specificationId: string }[];
+    assignedProcesses: string[]; // Process IDs
+    assignedStandardParts: string[]; // Standard Part IDs
+    assignedLayups: string[]; // Layup IDs
+    assignedAssemblies: string[]; // Assembly IDs
+
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface WorkPackageRevision {
+    id: string;
+    workPackageId: string;
+    listType: AssignableEntityType;
+    revision: string;
+    changelog: string;
+    snapshot: any;
+    createdAt: string;
+}
+
 export interface Project {
     id: string;
     projectNumber: string;
@@ -406,7 +455,24 @@ export interface Project {
     updatedAt: string;
     createdBy?: string;
 
-    // Optional loaded lists
+    // Optional loaded relations
+    workPackages?: ProjectWorkPackage[];
+
+    // Deprecated lists
     materialLists?: ProjectMaterialList[];
     processLists?: ProjectProcessList[];
+}
+
+// ------------------------------------------------------------------
+// Analysis Domain Models
+// ------------------------------------------------------------------
+
+export type AnalysisEntityType = 'material' | 'layup' | 'assembly';
+
+export interface AnalysisCartItem {
+    id: string; // ID of the Material, Layup, or Assembly
+    type: AnalysisEntityType;
+    color: string; // UI Color representation for charts (e.g., 'bg-blue-500')
+    selectedStandardId?: string; // Optional user selection for comparison matrix
+    selectedSpecificationId?: string; // Optional user selection for comparison matrix
 }

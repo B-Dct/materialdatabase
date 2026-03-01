@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Layers as LayersIcon, Atom, Settings, ClipboardList, Menu, Activity, FlaskConical, Nut } from "lucide-react";
+import { LayoutDashboard, Layers as LayersIcon, Atom, Settings, ClipboardList, Menu, Activity, FlaskConical, Nut, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -27,20 +27,48 @@ export function MainLayout() {
         permission?: string;
     }
 
-    const mainFnItems: NavItem[] = [
-        { href: "/", label: "Dashboard", icon: LayoutDashboard },
-        { href: "/materials", label: "Materials", icon: Atom },
-        { href: "/layups", label: "Layups", icon: LayersIcon },
-        { href: "/assemblies", label: "Assemblies", icon: LayersIcon },
-        { href: "/parts", label: "Standard Parts", icon: Nut },
-        { href: "/quality/analysis", label: "Analysis", icon: Activity },
-    ];
+    interface NavGroup {
+        title: string;
+        items: NavItem[];
+    }
 
-    const configItems: NavItem[] = [
-        { href: "/quality/measurements", label: "Measurements", icon: FlaskConical },
-        { href: "/quality/test-methods", label: "Test Methods", icon: FlaskConical },
-        { href: "/standards", label: "Standards", icon: ClipboardList },
-        { href: "/imports", label: "Data Imports", icon: ClipboardList, permission: 'import:data' },
+    const navGroups: NavGroup[] = [
+        {
+            title: "Overview",
+            items: [
+                { href: "/", label: "Dashboard", icon: LayoutDashboard },
+            ]
+        },
+        {
+            title: "Engineering",
+            items: [
+                { href: "/projects", label: "Projects", icon: Briefcase },
+                { href: "/assemblies", label: "Assemblies", icon: LayersIcon },
+                { href: "/layups", label: "Layups", icon: LayersIcon },
+            ]
+        },
+        {
+            title: "Database",
+            items: [
+                { href: "/materials", label: "Materials", icon: Atom },
+                { href: "/parts", label: "Standard Parts", icon: Nut },
+                { href: "/standards", label: "Standards", icon: ClipboardList },
+            ]
+        },
+        {
+            title: "Quality & Lab",
+            items: [
+                { href: "/quality/analysis", label: "Analysis", icon: Activity },
+                { href: "/quality/measurements", label: "Measurements", icon: FlaskConical },
+                { href: "/quality/test-methods", label: "Test Methods", icon: FlaskConical },
+            ]
+        },
+        {
+            title: "System",
+            items: [
+                { href: "/imports", label: "Data Imports", icon: ClipboardList, permission: 'import:data' },
+            ]
+        }
     ];
 
     return (
@@ -52,30 +80,15 @@ export function MainLayout() {
                     <span className="font-bold text-lg tracking-tight">AerospaceDB</span>
                 </div>
 
-                <nav className="flex flex-col gap-1 flex-1 overflow-auto">
-                    {/* Main Functions */}
-                    <div className="space-y-1">
-                        {mainFnItems.map((item) => {
-                            if (item.permission && !can(item.permission as any)) return null;
-                            return (
-                                <SidebarItem
-                                    key={item.href}
-                                    href={item.href}
-                                    icon={item.icon}
-                                    label={item.label}
-                                    active={location.pathname === item.href || (item.href !== '/' && location.pathname.startsWith(item.href))}
-                                />
-                            )
-                        })}
-                    </div>
-
-                    {/* Configuration Section */}
-                    <div className="mt-8">
-                        <h4 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                            Master Data
-                        </h4>
-                        <div className="space-y-1">
-                            {configItems.map((item) => {
+                <nav className="flex flex-col gap-4 flex-1 overflow-auto py-2">
+                    {navGroups.map((group, idx) => (
+                        <div key={idx} className="space-y-1">
+                            {group.title !== "Overview" && (
+                                <h4 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 mt-2">
+                                    {group.title}
+                                </h4>
+                            )}
+                            {group.items.map((item) => {
                                 if (item.permission && !can(item.permission as any)) return null;
                                 return (
                                     <SidebarItem
@@ -88,10 +101,10 @@ export function MainLayout() {
                                 )
                             })}
                         </div>
-                    </div>
+                    ))}
 
                     {/* Settings at Bottom */}
-                    <div className="mt-auto pt-4">
+                    <div className="mt-auto pt-4 border-t">
                         {can('manage:settings') && (
                             <SidebarItem
                                 href="/settings"
@@ -131,11 +144,14 @@ export function MainLayout() {
                 {mobileMenuOpen && (
                     <div className="md:hidden border-b p-4 bg-background animate-in slide-in-from-top-2">
                         <nav className="flex flex-col gap-2">
-                            {[...mainFnItems, ...configItems].map((item) => {
+                            {navGroups.flatMap(g => g.items).map((item) => {
                                 if (item.permission && !can(item.permission as any)) return null;
                                 return (
                                     <Link key={item.href} to={item.href} onClick={() => setMobileMenuOpen(false)}>
-                                        <Button variant="ghost" className="w-full justify-start">{item.label}</Button>
+                                        <Button variant="ghost" className="w-full justify-start gap-2">
+                                            <item.icon className="h-4 w-4" />
+                                            {item.label}
+                                        </Button>
                                     </Link>
                                 )
                             })}

@@ -5,18 +5,21 @@ import { Button } from '@/components/ui/button';
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
-import { Plus, CheckCircle2, XCircle, HelpCircle, Archive, Eye } from 'lucide-react';
+import { Plus, CheckCircle2, XCircle, HelpCircle, Archive, Eye, Atom } from 'lucide-react';
 import { Protect } from '@/components/auth/Protect';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header';
 import { type ColumnDef } from '@tanstack/react-table';
 import { type Material } from '@/types/domain';
 import { useNavigate } from 'react-router-dom';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/table-skeleton';
 
 export function MaterialListPage() {
     const { materials, fetchMaterials } = useAppStore();
     const navigate = useNavigate();
     const [showArchived, setShowArchived] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Enrich with search data
     const materialsWithSearch = materials.map(m => ({
@@ -31,7 +34,12 @@ export function MaterialListPage() {
 
     // Load data on mount
     useEffect(() => {
-        fetchMaterials();
+        const load = async () => {
+            setIsLoading(true);
+            await fetchMaterials();
+            setIsLoading(false);
+        };
+        load();
     }, [fetchMaterials]);
 
     const columns: ColumnDef<Material>[] = [
@@ -174,46 +182,58 @@ export function MaterialListPage() {
 
 
 
-            <div className="border rounded-md p-4">
-                <DataTable
-                    columns={columns}
-                    data={filteredMaterials}
-                    enableGlobalFilter={true}
-                    filterPlaceholder="Search materials..."
-                    facetedFilters={[
-                        {
-                            column: "status",
-                            title: "Status",
-                            options: [
-                                { label: "Active", value: "active", icon: CheckCircle2 },
-                                { label: "Standard", value: "standard", icon: CheckCircle2 },
-                                { label: "Restricted", value: "restricted", icon: XCircle },
-                                { label: "Obsolete", value: "obsolete", icon: Archive },
-                                { label: "Engineering", value: "engineering", icon: HelpCircle },
-                            ]
-                        },
-                        {
-                            column: "type",
-                            title: "Material Type",
-                            options: [
-                                { label: "Prepreg", value: "Prepreg" },
-                                { label: "Resin", value: "Resin" },
-                                { label: "Fabric", value: "Fabric" },
-                                { label: "Core", value: "Core" },
-                                { label: "Adhesive", value: "Adhesive" },
-                            ]
-                        },
-                        {
-                            column: "reachStatus",
-                            title: "Reach",
-                            options: [
-                                { label: "Compliant", value: "reach_compliant" },
-                                { label: "SVHC", value: "svhc_contained" },
-                                { label: "Restricted", value: "restricted" },
-                            ]
-                        }
-                    ]}
-                />
+            <div className="flex-1 overflow-hidden border rounded-md p-4 bg-card">
+                {isLoading ? (
+                    <TableSkeleton columns={7} rows={5} />
+                ) : filteredMaterials.length === 0 ? (
+                    <EmptyState
+                        icon={Atom}
+                        title="No materials database"
+                        description="Add your first base material to start building layups."
+                        actionLabel="Add Material"
+                        onAction={() => navigate('/materials/new')}
+                    />
+                ) : (
+                    <DataTable
+                        columns={columns}
+                        data={filteredMaterials}
+                        enableGlobalFilter={true}
+                        filterPlaceholder="Search materials..."
+                        facetedFilters={[
+                            {
+                                column: "status",
+                                title: "Status",
+                                options: [
+                                    { label: "Active", value: "active", icon: CheckCircle2 },
+                                    { label: "Standard", value: "standard", icon: CheckCircle2 },
+                                    { label: "Restricted", value: "restricted", icon: XCircle },
+                                    { label: "Obsolete", value: "obsolete", icon: Archive },
+                                    { label: "Engineering", value: "engineering", icon: HelpCircle },
+                                ]
+                            },
+                            {
+                                column: "type",
+                                title: "Material Type",
+                                options: [
+                                    { label: "Prepreg", value: "Prepreg" },
+                                    { label: "Resin", value: "Resin" },
+                                    { label: "Fabric", value: "Fabric" },
+                                    { label: "Core", value: "Core" },
+                                    { label: "Adhesive", value: "Adhesive" },
+                                ]
+                            },
+                            {
+                                column: "reachStatus",
+                                title: "Reach",
+                                options: [
+                                    { label: "Compliant", value: "reach_compliant" },
+                                    { label: "SVHC", value: "svhc_contained" },
+                                    { label: "Restricted", value: "restricted" },
+                                ]
+                            }
+                        ]}
+                    />
+                )}
             </div>
         </div>
     );

@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
     Material,
+    AnalysisCartItem,
     Layup,
     Assembly,
     MaterialVariant,
@@ -20,15 +21,18 @@ import type {
     StandardPart,
     MaterialTypeDefinition,
     Project,
+    ProjectWorkPackage,
     ProjectMaterialList,
-    ProjectProcessList
+    ProjectProcessList,
+    WorkPackageRevision,
+    AssignableEntityType
 } from '@/types/domain'
 import { SupabaseStorage } from './storage/SupabaseStorage';
 import type { StorageRepository } from './storage/types';
 import { v4 as uuidv4 } from "uuid";
 
 // Initialize Storage Adapter
-const storage: StorageRepository = new SupabaseStorage();
+export const storage: StorageRepository = new SupabaseStorage();
 
 interface AppState {
     materials: Material[];
@@ -48,14 +52,21 @@ interface AppState {
     // Specifications
     specifications: MaterialSpecification[];
 
+    // Analysis
+    analysisCart: AnalysisCartItem[];
+    addToAnalysisCart: (item: Omit<AnalysisCartItem, 'color'>) => void;
+    removeFromAnalysisCart: (id: string) => void;
+    clearAnalysisCart: () => void;
+    updateAnalysisCartItemSelection: (id: string, updates: { selectedStandardId?: string | null, selectedSpecificationId?: string | null }) => void;
+
     // Actions
-    fetchMaterials: () => Promise<void>;
+    fetchMaterials: (includeArchived?: boolean) => Promise<void>;
     addMaterial: (material: Omit<Material, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
     updateMaterial: (id: string, updates: Partial<Material>) => Promise<void>;
     deleteMaterial: (id: string) => Promise<void>;
 
     // Layup Logic
-    fetchLayups: () => Promise<void>;
+    fetchLayups: (includeArchived?: boolean) => Promise<void>;
     addLayup: (layup: Omit<Layup, 'id' | 'createdAt' | 'version'>) => Promise<void>;
     updateLayup: (id: string, updates: Partial<Layup>) => Promise<void>;
     deleteLayup: (id: string) => Promise<void>;
@@ -152,12 +163,23 @@ interface AppState {
     // Projects
     projects: Project[];
     currentProject: Project | null;
-    currentProjectLists: { materialLists: ProjectMaterialList[], processLists: ProjectProcessList[] };
+    currentProjectLists: { materialLists: ProjectMaterialList[], processLists: ProjectProcessList[] }; // Deprecated
+    workPackages: ProjectWorkPackage[];
+
     fetchProjects: () => Promise<void>;
     addProject: (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
     updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
     deleteProject: (id: string) => Promise<void>;
     setCurrentProject: (project: Project | null) => void;
+
+    // Project Work Packages
+    fetchWorkPackages: (projectId: string) => Promise<void>;
+    createWorkPackage: (wp: Omit<ProjectWorkPackage, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateWorkPackage: (id: string, updates: Partial<ProjectWorkPackage>) => Promise<void>;
+    deleteWorkPackage: (id: string) => Promise<void>;
+    closeWorkPackageList: (id: string, listType: AssignableEntityType, changelog: string, snapshot: any) => Promise<void>;
+    reopenWorkPackageList: (id: string, listType: AssignableEntityType, currentRevision: string) => Promise<void>;
+    fetchWorkPackageHistory: (wpId: string, listType?: AssignableEntityType) => Promise<WorkPackageRevision[]>;
 
     // Project Lists
     fetchProjectLists: (projectId: string) => Promise<void>;
@@ -192,11 +214,47 @@ export const useAppStore = create<AppState>()(
             standardParts: [],
             projects: [],
             currentProject: null,
-            currentProjectLists: { materialLists: [], processLists: [] },
+            currentProjectLists: { materialLists: [], processLists: [] }, // Deprecated
+            workPackages: [],
             documentCategories: ["Datasheet", "Test Report", "Certificate", "Specification", "Other"],
             isLoading: false,
             error: null,
             history: [],
+            analysisCart: [],
+
+            // --- Analysis Cart ---
+            addToAnalysisCart: (item) => {
+                set((state) => {
+                    if (state.analysisCart.length >= 6) return state; // Max 6 items
+                    if (state.analysisCart.some(i => i.id === item.id)) return state; // Prevent duplicates
+
+                    // Assign a color from a predefined palette
+                    const colors = [
+                        'bg-blue-500', 'bg-red-500', 'bg-green-500',
+                        'bg-amber-500', 'bg-purple-500', 'bg-teal-500'
+                    ];
+                    // Find first available color
+                    const usedColors = state.analysisCart.map(i => i.color);
+                    const availableColor = colors.find(c => !usedColors.includes(c)) || 'bg-gray-500';
+
+                    return { analysisCart: [...state.analysisCart, { ...item, color: availableColor }] };
+                });
+            },
+            removeFromAnalysisCart: (id) => {
+                set((state) => ({
+                    analysisCart: state.analysisCart.filter(item => item.id !== id)
+                }));
+            },
+            clearAnalysisCart: () => set({ analysisCart: [] }),
+            updateAnalysisCartItemSelection: (id, updates) => set(state => ({
+                analysisCart: state.analysisCart.map(item =>
+                    item.id === id ? {
+                        ...item,
+                        selectedStandardId: updates.selectedStandardId === null ? undefined : (updates.selectedStandardId || item.selectedStandardId),
+                        selectedSpecificationId: updates.selectedSpecificationId === null ? undefined : (updates.selectedSpecificationId || item.selectedSpecificationId)
+                    } : item
+                )
+            })),
 
             // --- Helpers ---
             uploadFile: async (file, bucket = 'documents', path) => {
@@ -307,14 +365,15 @@ export const useAppStore = create<AppState>()(
                 try {
                     // Duplicate Check
                     const existingLayups = get().layups;
-                    const createStackSignature = (pId: string | undefined, layers: typeof layup.layers) => {
+                    const createStackSignature = (pId: string | undefined, layers: typeof layup.layers, isRef: boolean | undefined, refMatId: string | undefined, refArchId: string | undefined) => {
                         const sortedLayers = [...(layers || [])].sort((a, b) => a.sequence - b.sequence);
                         const layerSig = sortedLayers.map(l => `${l.materialVariantId}:${l.orientation}`).join('|');
-                        return `${pId || 'none'}|${layerSig}`;
+                        const prefix = isRef ? `ref:${refMatId}:${refArchId}` : `phys:${pId || 'none'}`;
+                        return `${prefix}|${layerSig}`;
                     };
-                    const newSignature = createStackSignature(layup.processId, layup.layers);
+                    const newSignature = createStackSignature(layup.processId, layup.layers, layup.isReference, layup.materialId, layup.architectureTypeId);
                     const isDuplicate = existingLayups.some(l => {
-                        const existingSig = createStackSignature(l.processId, l.layers);
+                        const existingSig = createStackSignature(l.processId, l.layers, l.isReference, l.materialId, l.architectureTypeId);
                         return existingSig === newSignature;
                     });
                     if (isDuplicate) {
@@ -1350,9 +1409,86 @@ export const useAppStore = create<AppState>()(
             },
             setCurrentProject: (project) => {
                 set({ currentProject: project });
-                // If clearing project, also clear lists
-                if (!project) {
-                    set({ currentProjectLists: { materialLists: [], processLists: [] } });
+                if (project) {
+                    get().fetchWorkPackages(project.id);
+                    get().fetchProjectLists(project.id); // Also fetch legacy lists for now
+                } else {
+                    set({ workPackages: [], currentProjectLists: { materialLists: [], processLists: [] } });
+                }
+            },
+
+            // --- Project Work Packages ---
+            fetchWorkPackages: async (projectId: string) => {
+                try {
+                    const workPackages = await storage.getProjectWorkPackages(projectId);
+                    set({ workPackages });
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to fetch work packages');
+                }
+            },
+            createWorkPackage: async (wp) => {
+                try {
+                    const newWp = await storage.createProjectWorkPackage(wp);
+                    set((state) => ({ workPackages: [newWp, ...state.workPackages] }));
+                    toast.success('Work package created');
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to create work package');
+                }
+            },
+            updateWorkPackage: async (id, updates) => {
+                try {
+                    await storage.updateProjectWorkPackage(id, updates);
+                    set((state) => ({
+                        workPackages: state.workPackages.map((wp) =>
+                            wp.id === id ? { ...wp, ...updates, updatedAt: new Date().toISOString() } as ProjectWorkPackage : wp
+                        ),
+                    }));
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to update work package');
+                }
+            },
+            deleteWorkPackage: async (id) => {
+                try {
+                    await storage.deleteProjectWorkPackage(id);
+                    set((state) => ({ workPackages: state.workPackages.filter((wp) => wp.id !== id) }));
+                    toast.success('Work Package deleted');
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to delete work package');
+                }
+            },
+            closeWorkPackageList: async (id, listType, changelog, snapshot) => {
+                try {
+                    await storage.closeProjectWorkPackageList(id, listType, changelog, snapshot);
+                    set((state) => ({
+                        workPackages: state.workPackages.map((wp) =>
+                            wp.id === id ? { ...wp, [`${listType}ListStatus`]: 'closed', updatedAt: new Date().toISOString() } as unknown as ProjectWorkPackage : wp
+                        ),
+                    }));
+                    toast.success(`${listType} List Revision finalisiert`);
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to close work package list');
+                }
+            },
+            reopenWorkPackageList: async (id, listType, currentRevision) => {
+                try {
+                    const newRevision = await storage.reopenProjectWorkPackageList(id, listType, currentRevision);
+                    set((state) => ({
+                        workPackages: state.workPackages.map((wp) =>
+                            wp.id === id ? { ...wp, [`${listType}ListStatus`]: 'open', [`${listType}ListRevision`]: newRevision, updatedAt: new Date().toISOString() } as unknown as ProjectWorkPackage : wp
+                        ),
+                    }));
+                    toast.success(`Neue Revision gestartet (${listType}): ` + newRevision);
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to reopen work package list');
+                }
+            },
+            fetchWorkPackageHistory: async (wpId: string, listType?: AssignableEntityType) => {
+                try {
+                    const history = await storage.getWorkPackageRevisions(wpId, listType);
+                    return history;
+                } catch (e: any) {
+                    toast.error(e.message || 'Failed to fetch work package history');
+                    return [];
                 }
             },
             fetchProjectLists: async (projectId) => {

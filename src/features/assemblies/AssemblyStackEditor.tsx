@@ -42,10 +42,11 @@ interface AssemblyStackEditorProps {
     assembly?: Assembly;
     readonly?: boolean;
     lockStructure?: boolean;
+    initialProjectIds?: string[];
     onSaveSuccess?: () => void;
 }
 
-export function AssemblyStackEditor({ assembly, readonly = false, lockStructure = false, onSaveSuccess }: AssemblyStackEditorProps) {
+export function AssemblyStackEditor({ assembly, readonly = false, lockStructure = false, initialProjectIds, onSaveSuccess }: AssemblyStackEditorProps) {
     const { addAssembly, updateAssembly, materials, layups, standardParts, fetchMaterials, fetchLayups, fetchStandardParts } = useAppStore();
 
     // Form State
@@ -206,7 +207,8 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                     properties: [],
                     allowables: [],
                     assignedProfileIds: [],
-                    measurements: []
+                    measurements: [],
+                    projectIds: initialProjectIds
                 }, payloadComponents as any);
             }
             if (onSaveSuccess) onSaveSuccess();
