@@ -52,6 +52,7 @@ export function CreateTestRunPage() {
     const urlMaterialId = searchParams.get("materialId");
     const urlLayupId = searchParams.get("layupId");
     const urlAssemblyId = searchParams.get("assemblyId");
+    const urlRequestId = searchParams.get("requestId");
 
     // Store
     const {
@@ -60,7 +61,8 @@ export function CreateTestRunPage() {
         materials, fetchMaterials,
         layups, fetchLayups,
         assemblies, fetchAssemblies,
-        laboratories, fetchLaboratories
+        laboratories, fetchLaboratories,
+        testRequests, fetchTestRequests, updateTestRequest
     } = useAppStore();
 
     // Metadata State
@@ -95,12 +97,33 @@ export function CreateTestRunPage() {
         fetchMaterials();
         fetchLayups();
         fetchAssemblies();
+        if (testRequests.length === 0) fetchTestRequests();
 
         if (urlMaterialId) { setEntityType("material"); setEntityId(urlMaterialId); }
         else if (urlLayupId) { setEntityType("layup"); setEntityId(urlLayupId); }
         else if (urlAssemblyId) { setEntityType("assembly"); setEntityId(urlAssemblyId); }
 
-    }, [urlMaterialId, urlLayupId, urlAssemblyId]);
+    }, [urlMaterialId, urlLayupId, urlAssemblyId, fetchTestRequests, testRequests.length]);
+
+    // Pre-fill from Request
+    useEffect(() => {
+        if (urlRequestId && testRequests.length > 0 && materials.length > 0 && layups.length > 0 && assemblies.length > 0 && testMethods.length > 0 && properties.length > 0) {
+            const req = testRequests.find(r => r.id === urlRequestId);
+            if (req) {
+                setEntityType(req.entityType as any);
+                setEntityId(req.entityId);
+                if (req.orderNumber) setOrderNumber(req.orderNumber);
+                if (req.variantDescription) setReferenceNumber(req.variantDescription);
+                setSpecimenCount(req.numSpecimens);
+
+                // Set Test Method
+                setSelectedMethodId(req.testMethodId);
+
+                // Add exact property column
+                setTargetProperties([{ propertyId: req.propertyId, statsTypes: ['mean', 'range'] }]);
+            }
+        }
+    }, [urlRequestId, testRequests, materials, layups, assemblies, testMethods, properties]);
 
     const getEntityName = () => {
         if (!entityId) return null;
@@ -324,7 +347,12 @@ export function CreateTestRunPage() {
             }
 
             if (successCount > 0) {
-                navigate(-1);
+                if (urlRequestId) {
+                    await updateTestRequest(urlRequestId, { status: 'completed' });
+                    navigate('/quality/requests');
+                } else {
+                    navigate(-1);
+                }
             } else {
                 alert("No valid data entered.");
             }

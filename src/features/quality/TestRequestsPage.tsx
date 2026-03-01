@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FlaskConical, Link2 } from 'lucide-react';
+import { FlaskConical, Link2, Microscope } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 
@@ -135,16 +135,17 @@ export function TestRequestsPage() {
                                 <TableHead>Variants</TableHead>
                                 <TableHead>Order Number</TableHead>
                                 <TableHead className="w-[150px]">Status</TableHead>
+                                <TableHead className="w-[100px] text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {isLoading && filteredRequests.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading requests...</TableCell>
+                                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading requests...</TableCell>
                                 </TableRow>
                             ) : filteredRequests.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No test requests found.</TableCell>
+                                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No test requests found.</TableCell>
                                 </TableRow>
                             ) : filteredRequests.map(req => {
                                 const entityInfo = getEntityInfo(req.entityType, req.entityId);
@@ -231,6 +232,18 @@ export function TestRequestsPage() {
                                                     <SelectItem value="canceled">Canceled</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                                                disabled={req.status === 'completed' || req.status === 'canceled'}
+                                                onClick={() => navigate(`/measurements/new?requestId=${req.id}`)}
+                                                title="Enter Results"
+                                            >
+                                                <Microscope className="h-4 w-4" />
+                                            </Button>
                                         </TableCell>
                                     </TableRow>
                                 )
