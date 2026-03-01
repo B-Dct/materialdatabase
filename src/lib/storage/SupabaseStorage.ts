@@ -909,6 +909,7 @@ export class SupabaseStorage implements StorageRepository {
             projectId: wp.project_id,
             name: wp.name,
             description: wp.description,
+            status: wp.status,
             materialListStatus: wp.material_list_status,
             materialListRevision: wp.material_list_revision,
             processListStatus: wp.process_list_status,
@@ -934,6 +935,7 @@ export class SupabaseStorage implements StorageRepository {
             project_id: wp.projectId,
             name: wp.name,
             description: wp.description,
+            status: wp.status || 'planned',
             material_list_status: wp.materialListStatus,
             material_list_revision: wp.materialListRevision,
             process_list_status: wp.processListStatus,
@@ -966,6 +968,7 @@ export class SupabaseStorage implements StorageRepository {
         const dbUpdates: any = {};
         if (updates.name) dbUpdates.name = updates.name;
         if (updates.description !== undefined) dbUpdates.description = updates.description;
+        if (updates.status) dbUpdates.status = updates.status;
 
         if (updates.materialListStatus) dbUpdates.material_list_status = updates.materialListStatus;
         if (updates.materialListRevision) dbUpdates.material_list_revision = updates.materialListRevision;

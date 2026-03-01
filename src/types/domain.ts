@@ -410,6 +410,7 @@ export interface ProjectWorkPackage {
     projectId: string;
     name: string;
     description?: string;
+    status?: 'planned' | 'active' | 'completed';
 
     // Per-List Status and Revisions
     materialListStatus: 'open' | 'closed';

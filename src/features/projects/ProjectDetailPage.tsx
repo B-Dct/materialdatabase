@@ -105,6 +105,7 @@ export const ProjectDetailPage = () => {
         createWorkPackage({
             projectId: currentProject.id,
             name,
+            status: 'planned',
             materialListStatus: 'open',
             materialListRevision: 'A',
             processListStatus: 'open',
@@ -640,14 +641,14 @@ export const ProjectDetailPage = () => {
                         ) : (
                             workPackages.map(wp => (
                                 <div key={wp.id} className="group relative">
-                                    <button
+                                    <div
                                         onClick={() => setSelectedWpId(wp.id)}
-                                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${selectedWpId === wp.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'}`}
+                                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${selectedWpId === wp.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'}`}
                                     >
                                         <div className="flex items-center justify-between">
                                             <span className="truncate">{wp.name}</span>
                                         </div>
-                                    </button>
+                                    </div>
                                     <Button
                                         variant="ghost"
                                         size="icon"
@@ -688,7 +689,7 @@ export const ProjectDetailPage = () => {
                                     <Button variant={isEditingWP ? "default" : "outline"} size="sm" onClick={() => setIsEditingWP(!isEditingWP)}>
                                         {isEditingWP ? "Done Editing" : "Edit Details"}
                                     </Button>
-                                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 ml-2" onClick={() => handleDeleteWorkPackage(activeWp.id)}>
+                                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => handleDeleteWorkPackage(activeWp.id)}>
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </div>
