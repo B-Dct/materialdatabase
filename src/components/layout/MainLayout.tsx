@@ -58,6 +58,7 @@ export function MainLayout() {
         {
             title: "Quality & Lab",
             items: [
+                { href: "/quality/requests", label: "Requests", icon: ClipboardList },
                 { href: "/quality/analysis", label: "Analysis", icon: Activity },
                 { href: "/quality/measurements", label: "Measurements", icon: FlaskConical },
                 { href: "/quality/test-methods", label: "Test Methods", icon: FlaskConical },

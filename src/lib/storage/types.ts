@@ -159,4 +159,9 @@ export interface StorageRepository {
 
     // Queries
     getMaterialUsage(materialId: string): Promise<MaterialUsageRecord[]>;
+
+    // Lab Test Requests
+    getTestRequests(): Promise<import('@/types/domain').TestRequest[]>;
+    createTestRequest(request: Omit<import('@/types/domain').TestRequest, 'id' | 'createdAt' | 'updatedAt'>): Promise<import('@/types/domain').TestRequest>;
+    updateTestRequest(id: string, updates: Partial<import('@/types/domain').TestRequest>): Promise<void>;
 }

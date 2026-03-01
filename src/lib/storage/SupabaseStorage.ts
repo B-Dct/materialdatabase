@@ -1821,4 +1821,97 @@ export class SupabaseStorage implements StorageRepository {
             listStatus: row.status
         }));
     }
+
+    // --- Lab Test Requests ---
+
+    async getTestRequests(): Promise<import('@/types/domain').TestRequest[]> {
+        const { data, error } = await supabase
+            .from('test_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        return data.map((row: any) => ({
+            id: row.id,
+            entityType: row.entity_type,
+            entityId: row.entity_id,
+            entityName: row.entity_name,
+            requesterName: row.requester_name,
+            status: row.status,
+            orderNumber: row.order_number,
+            propertyId: row.property_id,
+            propertyName: row.property_name,
+            testMethodId: row.test_method_id,
+            testMethodName: row.test_method_name,
+            numVariants: row.num_variants,
+            numSpecimens: row.num_specimens,
+            variantDescription: row.variant_description,
+            createdAt: row.created_at
+        }));
+    }
+
+    async createTestRequest(request: Omit<import('@/types/domain').TestRequest, 'id' | 'createdAt'>): Promise<import('@/types/domain').TestRequest> {
+        const { data, error } = await supabase
+            .from('test_requests')
+            .insert({
+                entity_type: request.entityType,
+                entity_id: request.entityId,
+                entity_name: request.entityName,
+                requester_name: request.requesterName,
+                status: request.status,
+                order_number: request.orderNumber,
+                property_id: request.propertyId,
+                property_name: request.propertyName,
+                test_method_id: request.testMethodId,
+                test_method_name: request.testMethodName,
+                num_variants: request.numVariants,
+                num_specimens: request.numSpecimens,
+                variant_description: request.variantDescription
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        return {
+            id: data.id,
+            entityType: data.entity_type,
+            entityId: data.entity_id,
+            entityName: data.entity_name,
+            requesterName: data.requester_name,
+            status: data.status,
+            orderNumber: data.order_number,
+            propertyId: data.property_id,
+            propertyName: data.property_name,
+            testMethodId: data.test_method_id,
+            testMethodName: data.test_method_name,
+            numVariants: data.num_variants,
+            numSpecimens: data.num_specimens,
+            variantDescription: data.variant_description,
+            createdAt: data.created_at
+        };
+    }
+
+    async updateTestRequest(id: string, updates: Partial<import('@/types/domain').TestRequest>): Promise<void> {
+        const payload: any = {};
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.orderNumber !== undefined) payload.order_number = updates.orderNumber;
+        if (updates.variantDescription !== undefined) payload.variant_description = updates.variantDescription;
+
+        // Allowing updates to properties if needed, though usually just status/orderNumber
+        if (updates.numVariants !== undefined) payload.num_variants = updates.numVariants;
+        if (updates.numSpecimens !== undefined) payload.num_specimens = updates.numSpecimens;
+        if (updates.testMethodId !== undefined) payload.test_method_id = updates.testMethodId;
+        if (updates.testMethodName !== undefined) payload.test_method_name = updates.testMethodName;
+
+        if (Object.keys(payload).length > 0) {
+            const { error } = await supabase
+                .from('test_requests')
+                .update(payload)
+                .eq('id', id);
+
+            if (error) throw error;
+        }
+    }
 }

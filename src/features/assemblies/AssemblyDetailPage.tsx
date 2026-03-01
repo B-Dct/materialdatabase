@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil, Archive, Trash2 } from "lucide-react";
+import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil, Archive, Trash2, FlaskConical } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
@@ -12,6 +12,7 @@ import { AssemblyStackEditor } from "./AssemblyStackEditor";
 import { AssemblyStatistics } from "./AssemblyStatistics";
 import { AllowableManager } from "@/features/quality/AllowableManager";
 import { EntityStandardsManager } from "@/features/quality/EntityStandardsManager";
+
 import { AssemblyPropertiesView } from "./AssemblyPropertiesView";
 import { AssemblySpecifications } from "./AssemblySpecifications";
 import { MeasurementEntry } from "@/features/quality/MeasurementEntry";
@@ -148,12 +149,19 @@ export function AssemblyDetailPage() {
                             </Button>
                         </>
                     ) : (
-                        <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
-                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
-                        </Button>
+                        <>
+                            <Button variant="secondary" size="sm" onClick={() => navigate(`/quality/requests/new/assembly/${assembly.id}`)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 border">
+                                <FlaskConical className="h-4 w-4 mr-2" /> Request Lab Test
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+                                <Pencil className="h-4 w-4 mr-2" /> Edit Details
+                            </Button>
+                        </>
                     )}
                 </div>
             </div>
+
+
 
             {/* Main Content */}
             <div className="flex-1 overflow-hidden flex flex-col">

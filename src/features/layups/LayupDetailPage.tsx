@@ -9,7 +9,7 @@ import {
     TabsList,
     TabsTrigger,
 } from "@/components/ui/tabs";
-import { ArrowLeft, LayoutGrid, ShieldCheck, Box, Scale, Ruler, BarChart2, FileText, Pencil, Archive, Trash2 } from 'lucide-react';
+import { ArrowLeft, LayoutGrid, ShieldCheck, Box, Scale, Ruler, BarChart2, FileText, Pencil, Archive, Trash2, FlaskConical } from 'lucide-react';
 import { LayupStackEditor } from './LayupStackEditor';
 import { LayupStatistics } from './LayupStatistics';
 import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
@@ -17,6 +17,7 @@ import { EntityStandardsManager } from "@/features/quality/EntityStandardsManage
 import { AllowableManager } from '@/features/quality/AllowableManager';
 import { HistoryLog } from '@/features/shared/HistoryLog';
 import { EntityDeleteDialog } from '@/components/common/EntityDeleteDialog';
+
 
 import { LayupPropertiesView } from './LayupPropertiesView';
 import { LayupSpecifications } from './LayupSpecifications';
@@ -265,12 +266,19 @@ export function LayupDetailPage() {
                             </Button>
                         </>
                     ) : (
-                        <Button onClick={() => setIsEditing(true)}>
-                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
-                        </Button>
+                        <>
+                            <Button variant="secondary" size="sm" onClick={() => navigate(`/quality/requests/new/layup/${layup.id}`)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 border">
+                                <FlaskConical className="h-4 w-4 mr-2" /> Request Lab Test
+                            </Button>
+                            <Button onClick={() => setIsEditing(true)}>
+                                <Pencil className="h-4 w-4 mr-2" /> Edit Details
+                            </Button>
+                        </>
                     )}
                 </div>
             </div>
+
+
 
             <div className="flex-1 overflow-hidden flex flex-col">
                 <Tabs defaultValue="overview" className="flex-1 flex flex-col overflow-hidden">

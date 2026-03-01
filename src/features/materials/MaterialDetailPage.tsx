@@ -18,10 +18,9 @@ import { MaterialUsage } from './MaterialUsage';
 import { EntityStandardsManager } from '@/features/quality/EntityStandardsManager';
 import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
 import { HistoryLog } from '@/features/shared/HistoryLog';
-import { Ruler, Award, CheckCircle, Copy, Network } from 'lucide-react'; // Ensure imports are consolidated
+import { Ruler, Award, CheckCircle, Copy, Network, FlaskConical } from 'lucide-react'; // Ensure imports are consolidated
 import type { Material } from '@/types/domain';
 import { EntityDeleteDialog } from '@/components/common/EntityDeleteDialog';
-
 
 export function MaterialDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -151,18 +150,10 @@ export function MaterialDetailPage() {
     const handleArchive = async () => {
         if (confirm("Are you sure you want to archive this material? It will be marked as Obsolete.")) {
             handleChange('status', 'obsolete');
-            // We need to save this change immediately to persist it
-            // However, handleSave uses formData, so updating formData above works, but we need to trigger save.
-            // But handleSave might validate other fields.
-            // Let's just set it in formData and users can click Save, OR we do it nicely.
-            // UI Pattern: The button assumes immediate action?
-            // "Archive" usually implies an action.
-            // Let's save immediately.
             try {
                 if (material.id) {
                     await updateMaterial(material.id, { status: 'obsolete' });
                     setFormData(prev => ({ ...prev, status: 'obsolete' }));
-                    // Refresh? Store updates automatically.
                 }
             } catch (e) {
                 console.error("Archive failed", e);
@@ -243,16 +234,7 @@ export function MaterialDetailPage() {
                                 <Button
                                     variant="secondary"
                                     size="sm"
-                                    onClick={() => {
-                                        // If we want it to be part of "Save", we just change state. 
-                                        // But "Archive" feels like an action.
-                                        // Let's implement handlesArchive which saves immediately?
-                                        // Or just sets the status dropdown to obsolete?
-                                        // Simpler: Set status to obsolete in formData and show toast/alert "Status set to obsolete, click Save".
-                                        // User Experience: "Archive" button should probably just do it.
-                                        // I'll stick to my handleArchive implementation above.
-                                        handleArchive();
-                                    }}
+                                    onClick={() => handleArchive()}
                                 >
                                     <Archive className="h-4 w-4 mr-2" /> Archive
                                 </Button>
@@ -266,9 +248,14 @@ export function MaterialDetailPage() {
                             </Button>
                         </>
                     ) : (
-                        <Button variant="secondary" size="sm" onClick={handleEdit}>
-                            <Pencil className="h-4 w-4 mr-2" /> Edit Details
-                        </Button>
+                        <>
+                            <Button variant="secondary" size="sm" onClick={() => navigate(`/quality/requests/new/material/${material.id}`)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 border">
+                                <FlaskConical className="h-4 w-4 mr-2" /> Request Lab Test
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={handleEdit}>
+                                <Pencil className="h-4 w-4 mr-2" /> Edit Details
+                            </Button>
+                        </>
                     )}
                 </div>
             </div>

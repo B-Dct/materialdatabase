@@ -476,3 +476,25 @@ export interface AnalysisCartItem {
     selectedStandardId?: string; // Optional user selection for comparison matrix
     selectedSpecificationId?: string; // Optional user selection for comparison matrix
 }
+
+// ------------------------------------------------------------------
+// Lab Test Requests
+// ------------------------------------------------------------------
+
+export interface TestRequest {
+    id: string;
+    entityType: 'material' | 'layup' | 'assembly';
+    entityId: string;
+    entityName: string;
+    requesterName: string;
+    status: 'requested' | 'in_progress' | 'completed' | 'canceled';
+    orderNumber?: string;
+    propertyId: string;
+    propertyName: string;
+    testMethodId: string;
+    testMethodName: string;
+    numVariants: number;
+    numSpecimens: number;
+    variantDescription?: string;
+    createdAt: string;
+}

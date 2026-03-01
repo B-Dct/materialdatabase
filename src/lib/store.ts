@@ -25,7 +25,8 @@ import type {
     ProjectMaterialList,
     ProjectProcessList,
     WorkPackageRevision,
-    AssignableEntityType
+    AssignableEntityType,
+    TestRequest
 } from '@/types/domain'
 import { SupabaseStorage } from './storage/SupabaseStorage';
 import type { StorageRepository } from './storage/types';
@@ -192,6 +193,12 @@ interface AppState {
     updateProcessList: (id: string, updates: Partial<ProjectProcessList>) => Promise<void>;
     deleteProcessList: (id: string) => Promise<void>;
 
+    // Lab Test Requests
+    testRequests: TestRequest[];
+    fetchTestRequests: () => Promise<void>;
+    createTestRequests: (requests: Omit<TestRequest, 'id' | 'createdAt'>[]) => Promise<void>;
+    updateTestRequest: (id: string, updates: Partial<TestRequest>) => Promise<void>;
+
     // Helpers
     uploadFile: (file: File, bucket?: string, path?: string) => Promise<string>;
 }
@@ -221,6 +228,7 @@ export const useAppStore = create<AppState>()(
             error: null,
             history: [],
             analysisCart: [],
+            testRequests: [],
 
             // --- Analysis Cart ---
             addToAnalysisCart: (item) => {
@@ -1606,7 +1614,51 @@ export const useAppStore = create<AppState>()(
                 } finally {
                     set({ isLoading: false });
                 }
+            },
+
+            // --- Lab Test Requests ---
+            fetchTestRequests: async () => {
+                set({ isLoading: true, error: null });
+                try {
+                    const requests = await storage.getTestRequests();
+                    set({ testRequests: requests });
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to load test requests: ${e.message}`);
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            createTestRequests: async (requests) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const newRequests = await Promise.all(requests.map(req => storage.createTestRequest(req)));
+                    set(state => ({ testRequests: [...newRequests, ...state.testRequests] }));
+                    toast.success(`${requests.length} test request(s) created successfully. A lab technician will process them shortly.`);
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to create test requests: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateTestRequest: async (id, updates) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.updateTestRequest(id, updates);
+                    set(state => ({
+                        testRequests: state.testRequests.map(r => r.id === id ? { ...r, ...updates } : r)
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to update test request: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
             }
+
 
         }),
         {
