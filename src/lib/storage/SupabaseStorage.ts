@@ -23,7 +23,8 @@ import type {
     ProjectMaterialList,
     ProjectProcessList,
     WorkPackageRevision,
-    AssignableEntityType
+    AssignableEntityType,
+    ProductionSite
 } from '@/types/domain';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -348,6 +349,10 @@ export class SupabaseStorage implements StorageRepository {
                 isReference: l.is_reference,
                 materialId: l.material_id,
                 architectureTypeId: l.architecture_type_id,
+                processNumber: l.process_number,
+                reference: l.reference,
+                initiatingProjectId: l.initiating_project_id,
+                productionSiteId: l.production_site_id,
                 projectIds: l.properties?._projectIds || []
             };
         });
@@ -418,6 +423,33 @@ export class SupabaseStorage implements StorageRepository {
     }
 
     async createLayup(layup: Omit<Layup, 'id' | 'createdAt' | 'version'>): Promise<Layup> {
+        // Duplicate Prevention Check
+        if (layup.layers && layup.layers.length > 0 && !layup.isReference) {
+            const { data: allLayups, error: searchError } = await supabase
+                .from('layups')
+                .select('id, name, status, layup_layers(material_variant_id, orientation, sequence)')
+                .neq('status', 'obsolete');
+
+            if (!searchError && allLayups) {
+                const duplicateLayup = allLayups.find(existingLayup => {
+                    const existingLayers = existingLayup.layup_layers || [];
+                    if (existingLayers.length !== layup.layers!.length) return false;
+
+                    const sortedExisting = [...existingLayers].sort((a: any, b: any) => a.sequence - b.sequence);
+                    const sortedNew = [...layup.layers!].sort((a, b) => a.sequence - b.sequence);
+
+                    return sortedExisting.every((el: any, i) => {
+                        return el.material_variant_id === sortedNew[i].materialVariantId &&
+                            el.orientation === sortedNew[i].orientation;
+                    });
+                });
+
+                if (duplicateLayup) {
+                    throw new Error(`Duplicate Configuration: A layup with this exact stack sequence already exists: ${duplicateLayup.name} (${duplicateLayup.status})`);
+                }
+            }
+        }
+
         // Pack properties
         const packedProperties = {
             customProperties: layup.properties || [],
@@ -440,7 +472,11 @@ export class SupabaseStorage implements StorageRepository {
             previous_version_id: layup.previousVersionId,
             is_reference: layup.isReference,
             material_id: layup.materialId,
-            architecture_type_id: layup.architectureTypeId
+            architecture_type_id: layup.architectureTypeId,
+            process_number: layup.processNumber,
+            reference: layup.reference,
+            initiating_project_id: layup.initiatingProjectId,
+            production_site_id: layup.productionSiteId
         }).select().single();
 
         if (layupError) throw layupError;
@@ -486,6 +522,10 @@ export class SupabaseStorage implements StorageRepository {
         if (rest.isReference !== undefined) dbUpdates.is_reference = rest.isReference;
         if (rest.materialId !== undefined) dbUpdates.material_id = rest.materialId;
         if (rest.architectureTypeId !== undefined) dbUpdates.architecture_type_id = rest.architectureTypeId;
+        if (rest.processNumber !== undefined) dbUpdates.process_number = rest.processNumber;
+        if (rest.reference !== undefined) dbUpdates.reference = rest.reference;
+        if (rest.initiatingProjectId !== undefined) dbUpdates.initiating_project_id = rest.initiatingProjectId;
+        if (rest.productionSiteId !== undefined) dbUpdates.production_site_id = rest.productionSiteId;
 
         // Merge properties and allowables
         if (rest.properties !== undefined || allowables !== undefined) {
@@ -571,6 +611,10 @@ export class SupabaseStorage implements StorageRepository {
                 allowables: allowables, // Helper for UI
                 totalWeight: a.total_weight,
                 totalThickness: a.total_thickness,
+                processNumber: a.process_number,
+                reference: a.reference,
+                initiatingProjectId: a.initiating_project_id,
+                productionSiteId: a.production_site_id,
                 measurements: associatedMeasurements as unknown as Measurement[],
                 projectIds: a.properties?._projectIds || [],
                 components: associatedComponents.map((c: any) => ({
@@ -604,7 +648,11 @@ export class SupabaseStorage implements StorageRepository {
             assigned_profile_ids: assignedProfileIds,
             allowables: allowables,
             total_weight: rest.totalWeight,
-            total_thickness: rest.totalThickness
+            total_thickness: rest.totalThickness,
+            process_number: rest.processNumber,
+            reference: rest.reference,
+            initiating_project_id: rest.initiatingProjectId,
+            production_site_id: rest.productionSiteId
         };
 
 
@@ -677,6 +725,10 @@ export class SupabaseStorage implements StorageRepository {
         if (allowables) dbUpdates.allowables = allowables; // Keeping external format for backwards compat if needed
         if (rest.totalWeight !== undefined) dbUpdates.total_weight = rest.totalWeight;
         if (rest.totalThickness !== undefined) dbUpdates.total_thickness = rest.totalThickness;
+        if (rest.processNumber !== undefined) dbUpdates.process_number = rest.processNumber;
+        if (rest.reference !== undefined) dbUpdates.reference = rest.reference;
+        if (rest.initiatingProjectId !== undefined) dbUpdates.initiating_project_id = rest.initiatingProjectId;
+        if (rest.productionSiteId !== undefined) dbUpdates.production_site_id = rest.productionSiteId;
 
         if (Object.keys(dbUpdates).length > 0) {
             const { error } = await supabase.from('assemblies').update(dbUpdates).eq('id', id);
@@ -1558,6 +1610,90 @@ export class SupabaseStorage implements StorageRepository {
         if (error) throw error;
     }
 
+    // --- Production Sites ---
+
+    async getProductionSites(includeArchived: boolean = false): Promise<ProductionSite[]> {
+        let query = supabase.from('production_sites').select('*, layups(count)');
+        if (!includeArchived) {
+            query = query.eq('entry_status', 'active');
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+
+        // Fetch associated test counts via layups
+        const siteIds = data.map(d => d.id);
+        const testCounts: Record<string, number> = {};
+
+        if (siteIds.length > 0) {
+            const { data: layupsData } = await supabase.from('layups').select('id, production_site_id').in('production_site_id', siteIds);
+
+            if (layupsData && layupsData.length > 0) {
+                const layupIds = layupsData.map(l => l.id);
+                const { data: measurementsData } = await supabase.from('measurements').select('layup_id').in('layup_id', layupIds);
+
+                if (measurementsData) {
+                    measurementsData.forEach(m => {
+                        const siteId = layupsData.find(l => l.id === m.layup_id)?.production_site_id;
+                        if (siteId) {
+                            testCounts[siteId] = (testCounts[siteId] || 0) + 1;
+                        }
+                    });
+                }
+            }
+        }
+
+        return (data || []).map(row => {
+            // PostgREST returns count in an array
+            const layupCountObj = Array.isArray(row.layups) ? row.layups[0] : row.layups;
+            return {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                entryStatus: row.entry_status,
+                layupCount: layupCountObj?.count || 0,
+                testCount: testCounts[row.id] || 0
+            };
+        });
+    }
+
+    async createProductionSite(site: Omit<ProductionSite, 'id'>): Promise<ProductionSite> {
+        const dbPayload = {
+            name: site.name,
+            description: site.description,
+            entry_status: site.entryStatus || 'active'
+        };
+        const { data, error } = await supabase.from('production_sites').insert(dbPayload).select().single();
+        if (error) throw error;
+        return {
+            id: data.id,
+            name: data.name,
+            description: data.description,
+            entryStatus: data.entry_status
+        };
+    }
+
+    async updateProductionSite(id: string, updates: Partial<ProductionSite>): Promise<void> {
+        const dbUpdates: any = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.description !== undefined) dbUpdates.description = updates.description;
+        if (updates.entryStatus !== undefined) dbUpdates.entry_status = updates.entryStatus;
+
+        if (Object.keys(dbUpdates).length > 0) {
+            const { error } = await supabase.from('production_sites').update(dbUpdates).eq('id', id);
+            if (error) throw error;
+        }
+    }
+
+    async archiveProductionSite(id: string): Promise<void> {
+        const { error } = await supabase.from('production_sites').update({ entry_status: 'archived' }).eq('id', id);
+        if (error) throw error;
+    }
+
+    async restoreProductionSite(id: string): Promise<void> {
+        const { error } = await supabase.from('production_sites').update({ entry_status: 'active' }).eq('id', id);
+        if (error) throw error;
+    }
+
     async createMaterialType(type: string): Promise<MaterialTypeDefinition> {
         const { error } = await supabase.from('material_type_definitions').insert({ name: type });
         if (error) throw error;
@@ -1825,6 +1961,70 @@ export class SupabaseStorage implements StorageRepository {
         }));
     }
 
+    async getLayupProjectUsage(layupId: string): Promise<MaterialUsageRecord[]> {
+        const { data, error } = await supabase
+            .from('work_packages')
+            .select(`
+                id,
+                name,
+                layup_list_revision,
+                layup_list_status,
+                project_id,
+                projects (
+                    name,
+                    status
+                )
+            `)
+            .contains('assigned_layups', `["${layupId}"]`);
+
+        if (error) {
+            console.error("Error fetching layup project usage:", error);
+            return [];
+        }
+
+        return (data || []).map((row: any) => ({
+            projectId: row.project_id,
+            projectName: row.projects?.name || 'Unknown Project',
+            projectStatus: row.projects?.status || 'Unknown',
+            listId: row.id,
+            listName: row.name,
+            listRevision: row.layup_list_revision || '1.0.0',
+            listStatus: row.layup_list_status || 'open'
+        }));
+    }
+
+    async getAssemblyProjectUsage(assemblyId: string): Promise<MaterialUsageRecord[]> {
+        const { data, error } = await supabase
+            .from('work_packages')
+            .select(`
+                id,
+                name,
+                assembly_list_revision,
+                assembly_list_status,
+                project_id,
+                projects (
+                    name,
+                    status
+                )
+            `)
+            .contains('assigned_assemblies', `["${assemblyId}"]`);
+
+        if (error) {
+            console.error("Error fetching assembly project usage:", error);
+            return [];
+        }
+
+        return (data || []).map((row: any) => ({
+            projectId: row.project_id,
+            projectName: row.projects?.name || 'Unknown Project',
+            projectStatus: row.projects?.status || 'Unknown',
+            listId: row.id,
+            listName: row.name,
+            listRevision: row.assembly_list_revision || '1.0.0',
+            listStatus: row.assembly_list_status || 'open'
+        }));
+    }
+
     // --- Lab Test Requests ---
 
     async getTestRequests(): Promise<import('@/types/domain').TestRequest[]> {
@@ -1850,6 +2050,9 @@ export class SupabaseStorage implements StorageRepository {
             numVariants: row.num_variants,
             numSpecimens: row.num_specimens,
             variantDescription: row.variant_description,
+            assigneeId: row.assignee_id,
+            startDate: row.start_date,
+            targetDate: row.target_date,
             createdAt: row.created_at
         }));
     }
@@ -1870,7 +2073,10 @@ export class SupabaseStorage implements StorageRepository {
                 test_method_name: request.testMethodName,
                 num_variants: request.numVariants,
                 num_specimens: request.numSpecimens,
-                variant_description: request.variantDescription
+                variant_description: request.variantDescription,
+                assignee_id: request.assigneeId || null,
+                start_date: request.startDate || null,
+                target_date: request.targetDate || null
             })
             .select()
             .single();
@@ -1892,12 +2098,20 @@ export class SupabaseStorage implements StorageRepository {
             numVariants: data.num_variants,
             numSpecimens: data.num_specimens,
             variantDescription: data.variant_description,
+            assigneeId: data.assignee_id,
+            startDate: data.start_date,
+            targetDate: data.target_date,
             createdAt: data.created_at
         };
     }
 
     async updateTestRequest(id: string, updates: Partial<import('@/types/domain').TestRequest>): Promise<void> {
         const payload: any = {};
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.orderNumber !== undefined) payload.order_number = updates.orderNumber;
+        if (updates.assigneeId !== undefined) payload.assignee_id = updates.assigneeId;
+        if (updates.startDate !== undefined) payload.start_date = updates.startDate;
+        if (updates.targetDate !== undefined) payload.target_date = updates.targetDate;
         if (updates.status !== undefined) payload.status = updates.status;
         if (updates.orderNumber !== undefined) payload.order_number = updates.orderNumber;
         if (updates.variantDescription !== undefined) payload.variant_description = updates.variantDescription;
@@ -1916,5 +2130,276 @@ export class SupabaseStorage implements StorageRepository {
 
             if (error) throw error;
         }
+    }
+
+    // Lab Technicians
+    async getLabTechnicians(): Promise<import('@/types/domain').LabTechnician[]> {
+        const { data, error } = await supabase
+            .from('lab_technicians')
+            .select('*')
+            .order('name');
+        if (error) throw error;
+        return data.map(row => ({
+            id: row.id,
+            name: row.name,
+            createdAt: row.created_at
+        }));
+    }
+
+    async createLabTechnician(name: string): Promise<import('@/types/domain').LabTechnician> {
+        const { data, error } = await supabase
+            .from('lab_technicians')
+            .insert({ name })
+            .select()
+            .single();
+        if (error) throw error;
+        return {
+            id: data.id,
+            name: data.name,
+            createdAt: data.created_at
+        };
+    }
+
+    async deleteLabTechnician(id: string): Promise<void> {
+        const { error } = await supabase.from('lab_technicians').delete().eq('id', id);
+        if (error) throw error;
+    }
+
+    // Test Tasks
+    async getTestTasks(testRequestId: string): Promise<import('@/types/domain').TestTask[]> {
+        const { data, error } = await supabase
+            .from('test_tasks')
+            .select('*')
+            .eq('test_request_id', testRequestId)
+            .order('created_at');
+        if (error) throw error;
+        return data.map(row => ({
+            id: row.id,
+            testRequestId: row.test_request_id,
+            name: row.name,
+            durationHours: Number(row.duration_hours),
+            startDate: row.start_date,
+            targetDate: row.target_date,
+            status: row.status,
+            assigneeId: row.assignee_id,
+            dependsOnTaskId: row.depends_on_task_id,
+            dependencyOffsetDays: Number(row.dependency_offset_days) || 0,
+            orderIndex: row.order_index,
+            phase: row.phase,
+            standardDurationHours: row.standard_duration_hours ? Number(row.standard_duration_hours) : undefined,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        }));
+    }
+
+    async getAllTestTasks(): Promise<import('@/types/domain').TestTask[]> {
+        const { data, error } = await supabase
+            .from('test_tasks')
+            .select('*')
+            .order('created_at');
+        if (error) throw error;
+        return data.map(row => ({
+            id: row.id,
+            testRequestId: row.test_request_id,
+            name: row.name,
+            durationHours: Number(row.duration_hours),
+            startDate: row.start_date,
+            targetDate: row.target_date,
+            status: row.status,
+            assigneeId: row.assignee_id,
+            dependsOnTaskId: row.depends_on_task_id,
+            dependencyOffsetDays: Number(row.dependency_offset_days) || 0,
+            orderIndex: row.order_index,
+            phase: row.phase,
+            standardDurationHours: row.standard_duration_hours ? Number(row.standard_duration_hours) : undefined,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        }));
+    }
+
+    async createTestTask(task: Omit<import('@/types/domain').TestTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<import('@/types/domain').TestTask> {
+        const { data, error } = await supabase
+            .from('test_tasks')
+            .insert({
+                test_request_id: task.testRequestId,
+                name: task.name,
+                duration_hours: task.durationHours,
+                start_date: task.startDate || null,
+                target_date: task.targetDate || null,
+                status: task.status,
+                assignee_id: task.assigneeId || null,
+                depends_on_task_id: task.dependsOnTaskId || null,
+                dependency_offset_days: task.dependencyOffsetDays || 0,
+                order_index: task.orderIndex || 0,
+                phase: task.phase || null,
+                standard_duration_hours: task.standardDurationHours || null
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        return {
+            id: data.id,
+            testRequestId: data.test_request_id,
+            name: data.name,
+            durationHours: Number(data.duration_hours),
+            startDate: data.start_date,
+            targetDate: data.target_date,
+            status: data.status,
+            assigneeId: data.assignee_id,
+            dependsOnTaskId: data.depends_on_task_id,
+            dependencyOffsetDays: Number(data.dependency_offset_days) || 0,
+            orderIndex: data.order_index,
+            phase: data.phase,
+            standardDurationHours: data.standard_duration_hours ? Number(data.standard_duration_hours) : undefined,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at
+        };
+    }
+
+    async updateTestTask(id: string, updates: Partial<import('@/types/domain').TestTask>): Promise<void> {
+        const payload: any = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.durationHours !== undefined) payload.duration_hours = updates.durationHours;
+        if (updates.startDate !== undefined) payload.start_date = updates.startDate;
+        if (updates.targetDate !== undefined) payload.target_date = updates.targetDate;
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.assigneeId !== undefined) payload.assignee_id = updates.assigneeId;
+        if (updates.dependsOnTaskId !== undefined) payload.depends_on_task_id = updates.dependsOnTaskId;
+        if (updates.dependencyOffsetDays !== undefined) payload.dependency_offset_days = updates.dependencyOffsetDays;
+        if (updates.orderIndex !== undefined) payload.order_index = updates.orderIndex;
+        if (updates.phase !== undefined) payload.phase = updates.phase;
+        if (updates.standardDurationHours !== undefined) payload.standard_duration_hours = updates.standardDurationHours;
+
+        if (Object.keys(payload).length === 0) return;
+
+        const { error } = await supabase
+            .from('test_tasks')
+            .update(payload)
+            .eq('id', id);
+
+        if (error) throw error;
+    }
+
+    async deleteTestTask(id: string): Promise<void> {
+        const { error } = await supabase.from('test_tasks').delete().eq('id', id);
+        if (error) throw error;
+    }
+
+    // --- Task Templates ---
+    async getTaskTemplates(): Promise<import('@/types/domain').TestTaskTemplate[]> {
+        const { data, error } = await supabase.from('test_task_templates').select('*').order('name');
+        if (error) throw error;
+        return data.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            phase: row.phase,
+            createdAt: row.created_at
+        }));
+    }
+
+    async createTaskTemplate(template: Omit<import('@/types/domain').TestTaskTemplate, 'id' | 'createdAt'>): Promise<import('@/types/domain').TestTaskTemplate> {
+        const { data, error } = await supabase
+            .from('test_task_templates')
+            .insert({
+                name: template.name,
+                description: template.description || null,
+                phase: template.phase
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return {
+            id: data.id,
+            name: data.name,
+            description: data.description,
+            phase: data.phase,
+            createdAt: data.created_at
+        };
+    }
+
+    async updateTaskTemplate(id: string, updates: Partial<import('@/types/domain').TestTaskTemplate>): Promise<void> {
+        const payload: any = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.description !== undefined) payload.description = updates.description;
+        if (updates.phase !== undefined) payload.phase = updates.phase;
+
+        if (Object.keys(payload).length > 0) {
+            const { error } = await supabase.from('test_task_templates').update(payload).eq('id', id);
+            if (error) throw error;
+        }
+    }
+
+    async deleteTaskTemplate(id: string): Promise<void> {
+        const { error } = await supabase.from('test_task_templates').delete().eq('id', id);
+        if (error) throw error;
+    }
+
+    // --- Task Template Items ---
+    async getTaskTemplateItems(templateId: string): Promise<import('@/types/domain').TestTaskTemplateItem[]> {
+        const { data, error } = await supabase
+            .from('test_task_template_items')
+            .select('*')
+            .eq('template_id', templateId)
+            .order('order_index');
+
+        if (error) throw error;
+        return data.map(row => ({
+            id: row.id,
+            templateId: row.template_id,
+            name: row.name,
+            durationHours: Number(row.duration_hours),
+            dependsOnItemIndex: row.depends_on_item_index !== null ? Number(row.depends_on_item_index) : undefined,
+            dependencyOffsetDays: Number(row.dependency_offset_days) || 0,
+            orderIndex: Number(row.order_index)
+        }));
+    }
+
+    async createTaskTemplateItem(item: Omit<import('@/types/domain').TestTaskTemplateItem, 'id'>): Promise<import('@/types/domain').TestTaskTemplateItem> {
+        const { data, error } = await supabase
+            .from('test_task_template_items')
+            .insert({
+                template_id: item.templateId,
+                name: item.name,
+                duration_hours: item.durationHours,
+                depends_on_item_index: item.dependsOnItemIndex ?? null,
+                dependency_offset_days: item.dependencyOffsetDays || 0,
+                order_index: item.orderIndex
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return {
+            id: data.id,
+            templateId: data.template_id,
+            name: data.name,
+            durationHours: Number(data.duration_hours),
+            dependsOnItemIndex: data.depends_on_item_index !== null ? Number(data.depends_on_item_index) : undefined,
+            dependencyOffsetDays: Number(data.dependency_offset_days) || 0,
+            orderIndex: Number(data.order_index)
+        };
+    }
+
+    async updateTaskTemplateItem(id: string, updates: Partial<import('@/types/domain').TestTaskTemplateItem>): Promise<void> {
+        const payload: any = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.durationHours !== undefined) payload.duration_hours = updates.durationHours;
+        if (updates.dependsOnItemIndex !== undefined) payload.depends_on_item_index = updates.dependsOnItemIndex;
+        if (updates.dependencyOffsetDays !== undefined) payload.dependency_offset_days = updates.dependencyOffsetDays;
+        if (updates.orderIndex !== undefined) payload.order_index = updates.orderIndex;
+
+        if (Object.keys(payload).length > 0) {
+            const { error } = await supabase.from('test_task_template_items').update(payload).eq('id', id);
+            if (error) throw error;
+        }
+    }
+
+    async deleteTaskTemplateItem(id: string): Promise<void> {
+        const { error } = await supabase.from('test_task_template_items').delete().eq('id', id);
+        if (error) throw error;
     }
 }

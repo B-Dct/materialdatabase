@@ -1,0 +1,1 @@
+ALTER TABLE test_tasks ADD COLUMN order_index INTEGER DEFAULT 0;

@@ -27,9 +27,6 @@ export function CreateTestRequestPage() {
         materials, layups, assemblies,
         properties, fetchProperties,
         testMethods, fetchTestMethods,
-        specifications, fetchSpecifications,
-        requirementProfiles, fetchRequirementProfiles,
-        measurements, fetchMeasurements,
         createTestRequests
     } = useAppStore();
 
@@ -54,78 +51,23 @@ export function CreateTestRequestPage() {
             setIsLoadingData(true);
             if (properties.length === 0) await fetchProperties();
             if (testMethods.length === 0) await fetchTestMethods();
-            if (requirementProfiles.length === 0) await fetchRequirementProfiles();
-            if (measurements.length === 0) await fetchMeasurements();
 
-            if (entityId) {
-                await fetchSpecifications(entityId, entityType as any).catch(() => { });
-            }
             setIsLoadingData(false);
         }
         loadData();
-    }, [entityId, entityType, fetchProperties, fetchTestMethods, fetchRequirementProfiles, fetchMeasurements, fetchSpecifications]);
+    }, [entityId, entityType, fetchProperties, fetchTestMethods]);
 
     // Compute default properties once data is loaded
+    // User Feedback: Removed auto-population of assigned properties. User only wants to test explicitly selected properties.
     useEffect(() => {
         if (isLoadingData || !entityId) return;
         if (requestItems.length > 0) return; // Only default on first load
 
-        const relevantPropertyIds = new Set<string>();
+        // The user explicitly requested to NOT pre-fill the form with all assigned properties.
+        // They want to start with an empty list and add properties manually.
+        setRequestItems([]);
 
-        // 1. Check Specifications linked to entity
-        const specs = specifications.filter(s =>
-            (entityType === 'material' && s.materialId === entityId) ||
-            (entityType === 'layup' && s.layupId === entityId) ||
-            (entityType === 'assembly' && s.assemblyId === entityId)
-        );
-        specs.forEach(spec => {
-            spec.properties?.forEach(p => relevantPropertyIds.add(p.propertyId));
-        });
-
-        // 2. Check Requirement Profiles linked to entity (if applicable, e.g. material standards check)
-        const specProfileIds = specs.map(s => s.requirementProfileId).filter(Boolean);
-        specProfileIds.forEach(profileId => {
-            const profile = requirementProfiles.find(r => r.id === profileId);
-            if (profile) {
-                profile.rules.forEach(r => relevantPropertyIds.add(r.propertyId));
-            }
-        });
-
-        // 3. Check existing measurements
-        const existingMeasurements = measurements.filter(m => m.materialId === entityId || m.layupId === entityId || m.assemblyId === entityId);
-        existingMeasurements.forEach(m => {
-            relevantPropertyIds.add(m.propertyDefinitionId);
-        });
-
-        // Convert the relevant IDs into initial default cards
-        const defaultItems: PropertyRequestState[] = [];
-        relevantPropertyIds.forEach(pid => {
-            const propDef = properties.find(p => p.id === pid);
-            if (!propDef) return;
-
-            // Only add if there is at least one test method available for this property category/type
-            const availableMethods = testMethods.filter(tm => !tm.category || tm.category === propDef.category);
-
-            if (availableMethods.length > 0) {
-                // Try to auto-select a default method, maybe the first one
-                const defaultMethod = availableMethods[0];
-
-                defaultItems.push({
-                    propertyId: pid,
-                    propertyName: propDef.name,
-                    testMethodId: defaultMethod?.id || '',
-                    testMethodName: defaultMethod?.name || '',
-                    numVariants: 1,
-                    numSpecimens: 5,
-                    variantDescription: ''
-                });
-            }
-        });
-
-        // If no smart defaults found, just leave empty so user can add manually.
-        setRequestItems(defaultItems);
-
-    }, [isLoadingData, entityId, specifications, requirementProfiles, measurements, properties, testMethods]);
+    }, [isLoadingData, entityId]);
 
     // Handle adding a manual property
     const handleAddProperty = (propertyId: string) => {

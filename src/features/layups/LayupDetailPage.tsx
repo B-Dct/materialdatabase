@@ -9,9 +9,10 @@ import {
     TabsList,
     TabsTrigger,
 } from "@/components/ui/tabs";
-import { ArrowLeft, LayoutGrid, ShieldCheck, Box, Scale, Ruler, BarChart2, FileText, Pencil, Archive, Trash2, FlaskConical } from 'lucide-react';
+import { ArrowLeft, LayoutGrid, ShieldCheck, Box, Scale, Ruler, BarChart2, FileText, Pencil, Archive, Trash2, FlaskConical, Briefcase } from 'lucide-react';
 import { LayupStackEditor } from './LayupStackEditor';
 import { LayupStatistics } from './LayupStatistics';
+import { LayupUsage } from './LayupUsage';
 import { MeasurementEntry } from '@/features/quality/MeasurementEntry';
 import { EntityStandardsManager } from "@/features/quality/EntityStandardsManager";
 import { AllowableManager } from '@/features/quality/AllowableManager';
@@ -299,6 +300,9 @@ export function LayupDetailPage() {
                                     <TabsTrigger value="measurements" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                                         <Ruler className="h-4 w-4 mr-2" /> Measurements
                                     </TabsTrigger>
+                                    <TabsTrigger value="usage" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
+                                        <Briefcase className="h-4 w-4 mr-2" /> Usage
+                                    </TabsTrigger>
                                     <TabsTrigger value="statistics" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                                         <BarChart2 className="h-4 w-4 mr-2" /> Statistics
                                     </TabsTrigger>
@@ -325,6 +329,9 @@ export function LayupDetailPage() {
                                     )}
                                     <TabsTrigger value="allowables" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                                         <Scale className="h-4 w-4 mr-2" /> Allowables
+                                    </TabsTrigger>
+                                    <TabsTrigger value="usage" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
+                                        <Briefcase className="h-4 w-4 mr-2" /> Usage
                                     </TabsTrigger>
                                     <TabsTrigger value="statistics" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                                         <BarChart2 className="h-4 w-4 mr-2" /> Statistics
@@ -408,6 +415,13 @@ export function LayupDetailPage() {
                             allowables={layup.allowables || []}
                             availableMeasurements={layup.measurements || []}
                         />
+                    </TabsContent>
+
+                    <TabsContent value="usage" className="flex-1 overflow-auto p-4 md:p-6 pt-2 bg-slate-50/50 dark:bg-slate-900/20">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-medium">Project Usage</h3>
+                        </div>
+                        <LayupUsage layup={layup} />
                     </TabsContent>
 
                     <TabsContent value="statistics" className="flex-1 overflow-auto p-4 md:p-6 pt-2 bg-slate-50/50 dark:bg-slate-900/20">

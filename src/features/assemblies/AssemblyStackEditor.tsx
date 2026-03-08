@@ -2,26 +2,19 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-// SortableComponentItem imported below
-// SortableLayer expects { id, variantName, orientation, materialType }. 
-// Our Assembly items might differ. Let's create `SortableAssemblyComponent` inline or new file later if needed.
-// For now, I'll inline a simple Sortable wrapper or use the existing one if compatible.
-// Checking existing SortableLayer: it uses `useSortable` and renders a div.
-import { SortableComponentItem } from './SortableComponentItem'; // Will create this next
+import { SortableComponentItem } from './SortableComponentItem';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { Plus, Save, ChevronRight, Nut } from 'lucide-react';
+import { Plus, Save, ChevronRight, Nut, Check, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { EntityStatus, Assembly } from '@/types/domain';
 import { v4 as uuidv4 } from "uuid";
 import { MultiProcessSelector } from './MultiProcessSelector';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-
 import type { ComponentConfig } from '@/types/domain';
 
 interface ComponentItem {
@@ -30,9 +23,6 @@ interface ComponentItem {
     componentId: string; // origin ID
     componentName: string;
     quantity: number;
-    // For materials, we might want orientation? Assemblies usually define placement.
-    // Let's assume orientation is relevant if it's a material ply, or "Position" string.
-    // Domain says `position?: string`.
     position?: string;
     config?: ComponentConfig;
     materialType?: string; // Derived from store to help UI render correct inputs
@@ -47,16 +37,23 @@ interface AssemblyStackEditorProps {
 }
 
 export function AssemblyStackEditor({ assembly, readonly = false, lockStructure = false, initialProjectIds, onSaveSuccess }: AssemblyStackEditorProps) {
-    const { addAssembly, updateAssembly, materials, layups, standardParts, fetchMaterials, fetchLayups, fetchStandardParts } = useAppStore();
+    const { addAssembly, updateAssembly, materials, layups, standardParts, fetchMaterials, fetchLayups, fetchStandardParts, projects, fetchProjects, productionSites, fetchProductionSites } = useAppStore();
 
     // Form State
     const [name, setName] = useState(assembly?.name || "");
     const [description, setDescription] = useState(assembly?.description || "");
     const [status, setStatus] = useState<EntityStatus>(assembly?.status || "engineering");
     const [processIds, setProcessIds] = useState<string[]>(assembly?.processIds || []);
+
     // Manual Fields
     const [totalWeight, setTotalWeight] = useState<string>(assembly?.totalWeight?.toString() || "");
     const [totalThickness, setTotalThickness] = useState<string>(assembly?.totalThickness?.toString() || "");
+
+    // New Fields
+    const [processNumber, setProcessNumber] = useState<string>(assembly?.processNumber || "");
+    const [reference, setReference] = useState<string>(assembly?.reference || "");
+    const [initiatingProjectId, setInitiatingProjectId] = useState<string>(assembly?.initiatingProjectId || initialProjectIds?.[0] || "");
+    const [productionSiteId, setProductionSiteId] = useState<string>(assembly?.productionSiteId || "");
 
     // Stack State
     const [components, setComponents] = useState<ComponentItem[]>([]);
@@ -65,7 +62,9 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
         fetchMaterials();
         fetchLayups();
         fetchStandardParts();
-    }, [fetchMaterials, fetchLayups, fetchStandardParts]);
+        fetchProjects();
+        fetchProductionSites();
+    }, [fetchMaterials, fetchLayups, fetchStandardParts, fetchProjects, fetchProductionSites]);
 
     // Init from assembly
     useEffect(() => {
@@ -76,6 +75,10 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
             setProcessIds(assembly.processIds || []);
             setTotalWeight(assembly.totalWeight?.toString() || "");
             setTotalThickness(assembly.totalThickness?.toString() || "");
+            setProcessNumber(assembly.processNumber || "");
+            setReference(assembly.reference || "");
+            setInitiatingProjectId(assembly.initiatingProjectId || "");
+            setProductionSiteId(assembly.productionSiteId || "");
 
             if (assembly.components) {
                 // Map existing components
@@ -170,8 +173,6 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
 
     const handleSave = async () => {
         if (!name) return alert("Name is required");
-        // Only check quantity if NOT existing or structure not locked? 
-        // Actually structure must exist.
         if (components.length === 0) return alert("Add at least one component");
 
         const payloadComponents = components.map((c, idx) => ({
@@ -193,6 +194,10 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                     processIds,
                     totalWeight: totalWeight ? parseFloat(totalWeight) : undefined,
                     totalThickness: totalThickness ? parseFloat(totalThickness) : undefined,
+                    processNumber,
+                    reference,
+                    initiatingProjectId: initiatingProjectId || undefined,
+                    productionSiteId: productionSiteId || undefined,
                     components: payloadComponents as any
                 });
             } else {
@@ -208,7 +213,11 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                     allowables: [],
                     assignedProfileIds: [],
                     measurements: [],
-                    projectIds: initialProjectIds
+                    projectIds: initialProjectIds,
+                    processNumber,
+                    reference,
+                    initiatingProjectId: initiatingProjectId || undefined,
+                    productionSiteId: productionSiteId || undefined,
                 }, payloadComponents as any);
             }
             if (onSaveSuccess) onSaveSuccess();
@@ -227,17 +236,29 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
 
     const handleUpdateComponent = (id: string, updates: Partial<ComponentItem>) => {
-        // Allow updates to config? User said "Structure ... not editable".
-        // Maybe quantity/position? 
-        // "Things like Maunfacturing processes and Layup should NOT be editable".
-        // "Layup" probably means "Composition".
-        // I'll assume config updates are allowed? Or locked too?
-        // Safest is to lock everything related to structure.
         if (readonly || lockStructure) return;
         setComponents(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     };
 
-    return (
+    // ------------------------------------------------------------------------
+    // WIZARD LOGIC
+    // ------------------------------------------------------------------------
+    const [activeStep, setActiveStep] = useState(1);
+    const totalSteps = 3;
+
+    const handleNextStep = () => {
+        if (activeStep === 1) {
+            if (!name) return alert("Please enter an assembly name");
+        }
+        if (activeStep < totalSteps) setActiveStep(s => s + 1);
+    };
+
+    const handlePrevStep = () => {
+        if (activeStep > 1) setActiveStep(s => s - 1);
+    };
+
+    if (assembly?.id) {
+        return (
         <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)]">
             {/* LEFT: Library */}
             {!readonly && !lockStructure && (
@@ -417,6 +438,68 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                                     </div>
                                 )}
                             </div>
+                            <div className="grid grid-cols-2 gap-4 col-span-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground">Process Number</label>
+                                    {readonly ? (
+                                        <div className="text-sm border rounded-md px-3 h-8 flex items-center bg-muted/20 text-muted-foreground cursor-not-allowed">
+                                            {processNumber || 'N/A'}
+                                        </div>
+                                    ) : (
+                                        <Input value={processNumber} onChange={e => setProcessNumber(e.target.value)} placeholder="e.g. PR-001" className="h-8 text-sm" />
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-muted-foreground">Reference (HTZ)</label>
+                                    {readonly ? (
+                                        <div className="text-sm border rounded-md px-3 h-8 flex items-center bg-muted/20 text-muted-foreground cursor-not-allowed">
+                                            {reference || 'N/A'}
+                                        </div>
+                                    ) : (
+                                        <Input value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. HTZ-1234" className="h-8 text-sm" />
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-muted-foreground">Initiating Project</label>
+                                    {readonly ? (
+                                        <div className="text-sm border rounded-md px-3 h-8 flex items-center bg-muted/20 text-muted-foreground cursor-not-allowed">
+                                            {projects.find(p => p.id === initiatingProjectId)?.name || 'N/A'}
+                                        </div>
+                                    ) : (
+                                        <Select value={initiatingProjectId} onValueChange={setInitiatingProjectId}>
+                                            <SelectTrigger className="h-8 text-sm">
+                                                <SelectValue placeholder="Select Project..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                {(projects || []).map(p => (
+                                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-muted-foreground">Production Site</label>
+                                    {readonly ? (
+                                        <div className="text-sm border rounded-md px-3 h-8 flex items-center bg-muted/20 text-muted-foreground cursor-not-allowed">
+                                            {productionSites.find(s => s.id === productionSiteId)?.name || 'N/A'}
+                                        </div>
+                                    ) : (
+                                        <Select value={productionSiteId} onValueChange={setProductionSiteId}>
+                                            <SelectTrigger className="h-8 text-sm">
+                                                <SelectValue placeholder="Select Site..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                {(productionSites || []).map(s => (
+                                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                </div>
+                            </div>
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Description</label>
                                 <Input disabled={readonly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Short description..." />
@@ -493,6 +576,451 @@ export function AssemblyStackEditor({ assembly, readonly = false, lockStructure 
                         </CardContent>
                     </Card>
                 </div>
+            </div>
+        </div>
+    );
+
+    }
+
+    return (
+        <div className="flex flex-col h-[calc(100vh-100px)] overflow-hidden animate-in fade-in bg-slate-50/50 dark:bg-slate-900/10">
+            {/* Wizard Header / Stepper */}
+            <div className="flex items-center justify-between bg-white dark:bg-slate-950 p-4 border-b shrink-0">
+                <div className="flex flex-1 items-center space-x-2 md:space-x-4">
+                    {[1, 2, 3].map(step => (
+                        <div key={step} className="flex items-center" onClick={() => (readonly && setActiveStep(step))} style={{ cursor: readonly ? 'pointer' : 'default' }}>
+                            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-medium border-2 transition-colors duration-300
+                                ${activeStep === step ? 'border-primary bg-primary text-primary-foreground' :
+                                    activeStep > step ? 'border-primary text-primary bg-primary/10' : 'border-muted-foreground/30 text-muted-foreground'}`}
+                            >
+                                {activeStep > step ? <Check className="w-4 h-4" /> : step}
+                            </div>
+                            <span className={`ml-2 text-sm font-medium hidden md:block ${activeStep >= step ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                {step === 1 ? 'Base Data' : step === 2 ? 'Structure' : 'Summary'}
+                            </span>
+                            {step < 3 && <ChevronRight className="w-4 h-4 mx-2 md:mx-4 text-muted-foreground/30" />}
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {activeStep > 1 && (
+                        <Button variant="outline" size="sm" onClick={handlePrevStep}>
+                            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                        </Button>
+                    )}
+                    {activeStep < totalSteps ? (
+                        <Button size="sm" onClick={handleNextStep}>
+                            Next <ArrowRight className="h-4 w-4 ml-1" />
+                        </Button>
+                    ) : (
+                        (!readonly && (
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={handleSave}>
+                                <Save className="h-4 w-4 mr-2" />
+                                {assembly?.id ? "Update Assembly" : "Save Assembly"}
+                            </Button>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* Wizard Content Area */}
+            <div className="flex-1 overflow-hidden p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/10">
+
+                {/* STEP 1: BASE DATA */}
+                {activeStep === 1 && (
+                    <div className="max-w-4xl mx-auto h-full overflow-auto pb-8">
+                        <Card className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <CardHeader>
+                                <CardTitle>Base Data</CardTitle>
+                                <CardDescription>Enter the metadata and basic configuration for this assembly.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-4 md:p-6 space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-1.5 md:col-span-2">
+                                        <label className="text-sm font-medium text-muted-foreground">Assembly Name</label>
+                                        <Input disabled={readonly} value={name} onChange={e => setName(e.target.value)} className="h-10 text-sm" placeholder="e.g. Fuselage Main Section" />
+                                    </div>
+                                    <div className="space-y-1.5 md:col-span-2">
+                                        <label className="text-sm font-medium text-muted-foreground">Description</label>
+                                        <Input disabled={readonly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Short description..." className="h-10 text-sm" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Status</label>
+                                        {readonly ? (
+                                            <div className="h-10 flex items-center bg-muted/20 px-3 rounded-md border"><StatusBadge status={status} /></div>
+                                        ) : (
+                                            <Select value={status} onValueChange={(v: any) => setStatus(v)}>
+                                                <SelectTrigger className="h-10 text-sm">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="active"><StatusBadge status="active" /></SelectItem>
+                                                    <SelectItem value="standard"><StatusBadge status="standard" /></SelectItem>
+                                                    <SelectItem value="restricted"><StatusBadge status="restricted" /></SelectItem>
+                                                    <SelectItem value="obsolete"><StatusBadge status="obsolete" /></SelectItem>
+                                                    <SelectItem value="engineering"><StatusBadge status="engineering" /></SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Process Number</label>
+                                        <Input disabled={readonly} value={processNumber} onChange={e => setProcessNumber(e.target.value)} placeholder="e.g. PN-1234" className="h-10 text-sm" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Reference (e.g. HTZ)</label>
+                                        <Input disabled={readonly} value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. HTZ-55" className="h-10 text-sm" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Initiating Project</label>
+                                        <Select value={initiatingProjectId} onValueChange={setInitiatingProjectId} disabled={readonly}>
+                                            <SelectTrigger className="h-10 text-sm">
+                                                <SelectValue placeholder="Select Project..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                {projects.map(p => (
+                                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Production Site</label>
+                                        <Select value={productionSiteId} onValueChange={setProductionSiteId} disabled={readonly}>
+                                            <SelectTrigger className="h-10 text-sm">
+                                                <SelectValue placeholder="Select Site..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                {productionSites.map(s => (
+                                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Weight (g)</label>
+                                        <Input
+                                            type="number"
+                                            disabled={readonly}
+                                            value={totalWeight}
+                                            onChange={e => setTotalWeight(e.target.value)}
+                                            placeholder="e.g. 1500"
+                                            className="h-10 text-sm"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Thickness (mm)</label>
+                                        <Input
+                                            type="number"
+                                            disabled={readonly}
+                                            value={totalThickness}
+                                            onChange={e => setTotalThickness(e.target.value)}
+                                            placeholder="e.g. 2.5"
+                                            className="h-10 text-sm"
+                                        />
+                                    </div>
+                                    <div className="col-span-1 md:col-span-2 space-y-1.5">
+                                        <label className="text-sm font-medium text-muted-foreground">Applicable Processes</label>
+                                        <MultiProcessSelector
+                                            selectedIds={processIds}
+                                            onChange={setProcessIds}
+                                            readonly={readonly || lockStructure}
+                                        />
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
+
+                {/* STEP 2: STRUCTURE */}
+                {activeStep === 2 && (
+                    <div className="flex-1 grid grid-cols-12 gap-6 h-full overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* LEFT: Library */}
+                        {!readonly && !lockStructure && (
+                            <div className="col-span-12 lg:col-span-4 flex flex-col h-full overflow-hidden">
+                                <Card className="h-full flex flex-col transition-all duration-500 ease-in-out">
+                                    <CardHeader className="pb-2">
+                                        <CardTitle className="text-sm">Component Library</CardTitle>
+                                    </CardHeader>
+                                    <Tabs defaultValue="materials" className="flex-1 flex flex-col overflow-hidden">
+                                        <div className="p-0">
+                                            <TabsList className="w-full h-9 p-0 rounded-none bg-muted/50">
+                                                <TabsTrigger value="materials" className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-xs">Materials</TabsTrigger>
+                                                <TabsTrigger value="layups" className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-xs">Layups</TabsTrigger>
+                                                <TabsTrigger value="parts" className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-xs">Std Parts</TabsTrigger>
+                                            </TabsList>
+                                        </div>
+
+                                        <TabsContent value="materials" className="flex-1 flex flex-col overflow-hidden p-0 mt-0">
+                                            {!selectedMaterialId ? (
+                                                <>
+                                                    <div className="px-3 pt-3 pb-2 shrink-0">
+                                                        <Input placeholder="Search materials..." value={matSearch} onChange={e => setMatSearch(e.target.value)} className="h-8 text-xs bg-muted/20" />
+                                                    </div>
+                                                    <div className="flex-1 overflow-auto">
+                                                        <div className="divide-y relative">
+                                                            {materials
+                                                                .filter(m =>
+                                                                    m.name.toLowerCase().includes(matSearch.toLowerCase()) &&
+                                                                    !['restricted', 'obsolete'].includes(m.status)
+                                                                )
+                                                                .map(m => (
+                                                                    <div
+                                                                        key={m.id}
+                                                                        className="p-3 hover:bg-muted/50 cursor-pointer flex justify-between items-center group transition-colors"
+                                                                        onClick={() => setSelectedMaterialId(m.id)}
+                                                                    >
+                                                                        <div>
+                                                                            <span className="font-medium text-sm">{m.name}</span>
+                                                                            <div className="flex gap-2 mt-1">
+                                                                                <Badge variant="outline" className="text-[10px] h-4 px-1">{m.type}</Badge>
+                                                                                <span className="text-[10px] text-muted-foreground self-center">{(m.variants || []).length} variants</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                                                    </div>
+                                                                ))}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div className="flex flex-col h-full animate-in slide-in-from-right-5 fade-in duration-200">
+                                                    <div className="px-4 py-3 bg-muted/30 border-b flex justify-between items-center shrink-0">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Selected Material</span>
+                                                            <span className="font-medium text-sm">{materials.find(m => m.id === selectedMaterialId)?.name}</span>
+                                                        </div>
+                                                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedMaterialId(null)}>
+                                                            Change
+                                                        </Button>
+                                                    </div>
+                                                    <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-900/20">
+                                                        <div className="p-3 text-xs font-medium text-muted-foreground border-b bg-background/50 backdrop-blur">
+                                                            Available Variants
+                                                        </div>
+                                                        <div className="divide-y">
+                                                            {(materials.find(m => m.id === selectedMaterialId)?.variants || []).map(v => (
+                                                                <div key={v.id} className="flex justify-between items-center p-3 hover:bg-muted/50 text-sm bg-background">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-medium">{v.variantName}</span>
+                                                                        <span className="text-[10px] text-muted-foreground font-mono mt-0.5">{v.id}</span>
+                                                                    </div>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="secondary"
+                                                                        className="h-7 text-xs"
+                                                                        onClick={() => addComponent('material', v.id, `${materials.find(m => m.id === selectedMaterialId)?.name} - ${v.variantName}`)}
+                                                                    >
+                                                                        <Plus className="h-3 w-3 mr-1" /> Add
+                                                                    </Button>
+                                                                </div>
+                                                            ))}
+                                                            {(materials.find(m => m.id === selectedMaterialId)?.variants || []).length === 0 && (
+                                                                <div className="p-8 text-center text-muted-foreground text-xs italic">
+                                                                    No variants available for this material.
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </TabsContent>
+
+                                        <TabsContent value="layups" className="flex-1 flex flex-col overflow-auto p-0 mt-0">
+                                            <div className="px-3 pt-3 pb-2 shrink-0">
+                                                <Input placeholder="Search layups..." value={layupSearch} onChange={e => setLayupSearch(e.target.value)} className="h-8 text-xs bg-muted/20" />
+                                            </div>
+                                            <div className="flex-1 divide-y overflow-auto">
+                                                {layups
+                                                    .filter(l =>
+                                                        l.name.toLowerCase().includes(layupSearch.toLowerCase()) &&
+                                                        !['restricted', 'obsolete'].includes(l.status)
+                                                    )
+                                                    .map(l => (
+                                                        <div key={l.id} className="p-3 hover:bg-muted/50 flex justify-between items-center">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-medium text-sm line-clamp-1">{l.name}</span>
+                                                                <span className="text-[10px] text-muted-foreground mt-1">{l.layers?.length || 0} Layers • <StatusBadge status={l.status as EntityStatus} /></span>
+                                                            </div>
+                                                            <Button size="sm" variant="secondary" className="h-7 text-xs shrink-0 ml-2" onClick={() => addComponent('layup', l.id, l.name)}>
+                                                                Add
+                                                            </Button>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        </TabsContent>
+
+                                        <TabsContent value="parts" className="flex-1 flex flex-col overflow-auto p-0 mt-0">
+                                            <div className="px-3 pt-3 pb-2 shrink-0">
+                                                <Input placeholder="Search parts..." value={partSearch} onChange={e => setPartSearch(e.target.value)} className="h-8 text-xs bg-muted/20" />
+                                            </div>
+                                            <div className="flex-1 divide-y overflow-auto">
+                                                {standardParts
+                                                    .filter(p =>
+                                                        p.name.toLowerCase().includes(partSearch.toLowerCase()) &&
+                                                        !['restricted', 'obsolete'].includes(p.status)
+                                                    )
+                                                    .map(p => (
+                                                        <div key={p.id} className="p-3 hover:bg-muted/50 flex justify-between items-center">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-medium text-sm flex items-center gap-2">
+                                                                    <Nut className="h-3 w-3 text-muted-foreground" />
+                                                                    {p.name}
+                                                                </span>
+                                                                <span className="text-[10px] text-muted-foreground mt-1">{p.manufacturer || 'Unknown'} • <StatusBadge status={p.status as EntityStatus} /></span>
+                                                            </div>
+                                                            <Button size="sm" variant="secondary" className="h-7 text-xs shrink-0 ml-2" onClick={() => addComponent('standard_part', p.id, p.name)}>
+                                                                Add
+                                                            </Button>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        </TabsContent>
+                                    </Tabs>
+                                </Card>
+                            </div>
+                        )}
+
+                        {/* RIGHT: Stack Editor */}
+                        <div className={readonly || lockStructure ? "col-span-12" : "col-span-12 lg:col-span-8"}>
+                            {/* Stack */}
+                            <Card className="h-full flex flex-col overflow-hidden bg-white dark:bg-slate-900 border">
+                                <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                                    <div className="flex justify-between items-center">
+                                        <CardTitle className="text-base flex items-center">
+                                            Assembly Structure
+                                            {lockStructure && <Badge variant="secondary" className="ml-3 font-normal text-xs">Locked</Badge>}
+                                        </CardTitle>
+                                        <Badge variant="outline">{components.length} Components</Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="flex-1 overflow-auto p-4 bg-slate-50 dark:bg-slate-900/50">
+                                    <DndContext
+                                        sensors={sensors}
+                                        collisionDetection={closestCenter}
+                                        onDragEnd={handleDragEnd}
+                                    >
+                                        <SortableContext items={components.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                                            {components.length === 0 ? (
+                                                <div className="h-full flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg p-10">
+                                                    <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                                                        <Plus className="h-8 w-8 opacity-40 text-primary" />
+                                                    </div>
+                                                    <p className="font-medium text-foreground">Assembly structure is empty.</p>
+                                                    {(!readonly && !lockStructure) && <p className="text-sm mt-1">Select components from the left and add them here.</p>}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {components.map((comp) => (
+                                                        <SortableComponentItem
+                                                            key={comp.id}
+                                                            {...comp}
+                                                            readonly={readonly || lockStructure}
+                                                            onRemove={removeComponent}
+                                                            onUpdate={handleUpdateComponent}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </SortableContext>
+                                    </DndContext>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                )}
+
+                {/* STEP 3: SUMMARY */}
+                {activeStep === 3 && (
+                    <div className="max-w-4xl mx-auto h-full overflow-auto pb-8 space-y-6">
+                        <Card className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <CardHeader className="border-b bg-muted/20">
+                                <CardTitle>Data Summary</CardTitle>
+                                <CardDescription>Review the final assembly configuration before saving.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-6 space-y-8">
+
+                                {/* Base Data Summary */}
+                                <div>
+                                    <h3 className="text-sm font-semibold border-b pb-2 mb-4">Base Data</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Name</span>
+                                            <span className="text-sm">{name || <span className="text-destructive font-semibold">Missing Name</span>}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Status</span>
+                                            <div><StatusBadge status={status} /></div>
+                                        </div>
+                                        <div className="flex flex-col md:col-span-3">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Description</span>
+                                            <span className="text-sm">{description || 'No description'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Process Number</span>
+                                            <span className="text-sm">{processNumber || 'N/A'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Reference</span>
+                                            <span className="text-sm">{reference || 'N/A'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Initiating Project</span>
+                                            <span className="text-sm">{projects.find(p => p.id === initiatingProjectId)?.name || 'N/A'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Production Site</span>
+                                            <span className="text-sm">{productionSites.find(s => s.id === productionSiteId)?.name || 'N/A'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Applicable Processes</span>
+                                            <span className="text-sm">{processIds.length} processes selected</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Calculated Metrics */}
+                                <div>
+                                    <h3 className="text-sm font-semibold border-b pb-2 mb-4">Manual Metrics</h3>
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="flex flex-col items-center justify-center p-4 bg-muted/10 rounded-md border border-dashed border-primary/20 bg-primary/5">
+                                            <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Components</label>
+                                            <div className="text-xl font-bold mt-2">
+                                                {components.length}
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col items-center justify-center p-4 bg-muted/10 rounded-md border border-dashed">
+                                            <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Thickness</label>
+                                            <div className="flex items-center gap-1 mt-2">
+                                                <span className="text-xl font-bold">{totalThickness || '0'}</span>
+                                                <span className="text-sm text-muted-foreground font-medium">mm</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col items-center justify-center p-4 bg-muted/10 rounded-md border border-dashed">
+                                            <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Weight</label>
+                                            <div className="flex items-center gap-1 mt-2">
+                                                <span className="text-xl font-bold">{totalWeight || '0'}</span>
+                                                <span className="text-sm text-muted-foreground font-medium">g</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Validation Warnings Layer count */}
+                                {components.length === 0 && (
+                                    <div className="p-4 bg-red-50 text-red-800 border-l-4 border-red-500 rounded-md">
+                                        <p className="font-semibold text-sm">Action Required</p>
+                                        <p className="text-xs opacity-90">Your assembly has no components. Please return to Step 2 and add components.</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
             </div>
         </div>
     );

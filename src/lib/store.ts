@@ -1,4 +1,5 @@
 
+import { format, addDays, parseISO, isValid, differenceInDays } from 'date-fns';
 import { toast } from 'sonner';
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -26,7 +27,10 @@ import type {
     ProjectProcessList,
     WorkPackageRevision,
     AssignableEntityType,
-    TestRequest
+    TestRequest,
+    ProductionSite,
+    LabTechnician,
+    TestTask
 } from '@/types/domain'
 import { SupabaseStorage } from './storage/SupabaseStorage';
 import type { StorageRepository } from './storage/types';
@@ -132,6 +136,14 @@ interface AppState {
     archiveMaterialType: (type: string) => Promise<void>;
     restoreMaterialType: (type: string) => Promise<void>;
 
+    // Production Sites
+    productionSites: ProductionSite[];
+    fetchProductionSites: (includeArchived?: boolean) => Promise<void>;
+    addProductionSite: (site: Omit<ProductionSite, 'id'>) => Promise<void>;
+    updateProductionSite: (id: string, updates: Partial<ProductionSite>) => Promise<void>;
+    archiveProductionSite: (id: string) => Promise<void>;
+    restoreProductionSite: (id: string) => Promise<void>;
+
     // Specification Actions
     fetchSpecifications: (entityId: string, entityType?: 'material' | 'layup' | 'assembly') => Promise<void>;
     fetchSpecificationsForEntities: (entities: { id: string, type: 'material' | 'layup' | 'assembly' }[]) => Promise<void>;
@@ -199,6 +211,36 @@ interface AppState {
     createTestRequests: (requests: Omit<TestRequest, 'id' | 'createdAt'>[]) => Promise<void>;
     updateTestRequest: (id: string, updates: Partial<TestRequest>) => Promise<void>;
 
+    // Lab Technicians
+    labTechnicians: LabTechnician[];
+    fetchLabTechnicians: () => Promise<void>;
+    createLabTechnician: (name: string) => Promise<void>;
+    deleteLabTechnician: (id: string) => Promise<void>;
+
+    // Test Tasks
+    testTasks: Record<string, TestTask[]>; // Keyed by testRequestId
+    fetchTestTasks: (testRequestId: string) => Promise<void>;
+    fetchAllTestTasks: () => Promise<void>;
+    createTestTask: (task: Omit<TestTask, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+    updateTestTask: (id: string, updates: Partial<TestTask>) => Promise<void>;
+    deleteTestTask: (id: string) => Promise<void>;
+
+    // Task Templates
+    taskTemplates: import('@/types/domain').TestTaskTemplate[];
+    taskTemplateItems: Record<string, import('@/types/domain').TestTaskTemplateItem[]>; // Keyed by templateId
+
+    fetchTaskTemplates: () => Promise<void>;
+    createTaskTemplate: (template: Omit<import('@/types/domain').TestTaskTemplate, 'id' | 'createdAt'>) => Promise<void>;
+    updateTaskTemplate: (id: string, updates: Partial<import('@/types/domain').TestTaskTemplate>) => Promise<void>;
+    deleteTaskTemplate: (id: string) => Promise<void>;
+
+    fetchTaskTemplateItems: (templateId: string) => Promise<void>;
+    createTaskTemplateItem: (item: Omit<import('@/types/domain').TestTaskTemplateItem, 'id'>) => Promise<void>;
+    updateTaskTemplateItem: (id: string, updates: Partial<import('@/types/domain').TestTaskTemplateItem>) => Promise<void>;
+    deleteTaskTemplateItem: (id: string, templateId: string) => Promise<void>;
+
+    applyTemplateToRequest: (templateId: string, requestId: string, startDate: string) => Promise<void>;
+
     // Helpers
     uploadFile: (file: File, bucket?: string, path?: string) => Promise<string>;
 }
@@ -217,18 +259,23 @@ export const useAppStore = create<AppState>()(
             measurements: [],
             processes: [],
             materialTypes: [],
+            productionSites: [],
             specifications: [],
+            labTechnicians: [],
+            testTasks: {},
             standardParts: [],
             projects: [],
             currentProject: null,
             currentProjectLists: { materialLists: [], processLists: [] }, // Deprecated
             workPackages: [],
+            testRequests: [],
+            taskTemplates: [],
+            taskTemplateItems: {},
             documentCategories: ["Datasheet", "Test Report", "Certificate", "Specification", "Other"],
             isLoading: false,
             error: null,
             history: [],
             analysisCart: [],
-            testRequests: [],
 
             // --- Analysis Cart ---
             addToAnalysisCart: (item) => {
@@ -1084,6 +1131,73 @@ export const useAppStore = create<AppState>()(
                 }
             },
 
+            // --- Production Sites ---
+            fetchProductionSites: async (includeArchived = false) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const sites = await storage.getProductionSites(includeArchived);
+                    set({ productionSites: sites });
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            addProductionSite: async (site) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const newSite = await storage.createProductionSite(site);
+                    set(state => ({ productionSites: [...state.productionSites, newSite].sort((a, b) => a.name.localeCompare(b.name)) }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateProductionSite: async (id, updates) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.updateProductionSite(id, updates);
+                    set(state => ({
+                        productionSites: state.productionSites.map(s => s.id === id ? { ...s, ...updates } : s)
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            archiveProductionSite: async (id) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.archiveProductionSite(id);
+                    set(state => ({
+                        productionSites: state.productionSites.map(s => s.id === id ? { ...s, entryStatus: 'archived' } : s)
+                    }));
+                    toast.success("Production site archived successfully");
+                } catch (e: any) {
+                    toast.error(e.message || "Failed to archive production site");
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            restoreProductionSite: async (id) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.restoreProductionSite(id);
+                    set(state => ({
+                        productionSites: state.productionSites.map(s => s.id === id ? { ...s, entryStatus: 'active' } : s)
+                    }));
+                    toast.success("Production site restored successfully");
+                } catch (e: any) {
+                    toast.error(e.message || "Failed to restore production site");
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
             // --- Specifications ---
             fetchSpecifications: async (entityId, entityType = 'material') => {
                 set({ isLoading: true });
@@ -1657,9 +1771,528 @@ export const useAppStore = create<AppState>()(
                 } finally {
                     set({ isLoading: false });
                 }
+            },
+
+            // Lab Technicians
+            fetchLabTechnicians: async () => {
+                set({ isLoading: true, error: null });
+                try {
+                    const techs = await storage.getLabTechnicians();
+                    set({ labTechnicians: techs });
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to load lab technicians: ${e.message}`);
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            createLabTechnician: async (name) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const tech = await storage.createLabTechnician(name);
+                    set(state => ({ labTechnicians: [...state.labTechnicians, tech] }));
+                    toast.success('Lab Technician created successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to create lab technician: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteLabTechnician: async (id) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.deleteLabTechnician(id);
+                    set(state => ({
+                        labTechnicians: state.labTechnicians.filter(t => t.id !== id),
+                        testRequests: state.testRequests.map(r => r.assigneeId === id ? { ...r, assigneeId: undefined } : r)
+                    }));
+                    toast.success('Lab Technician deleted successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to delete lab technician: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // Test Tasks
+            fetchTestTasks: async (testRequestId) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const tasks = await storage.getTestTasks(testRequestId);
+                    set(state => ({
+                        testTasks: {
+                            ...state.testTasks,
+                            [testRequestId]: tasks
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to load test tasks: ${e.message}`);
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            fetchAllTestTasks: async () => {
+                set({ isLoading: true, error: null });
+                try {
+                    const allTasks = await storage.getAllTestTasks();
+                    const groupedTasks: Record<string, TestTask[]> = {};
+                    for (const t of allTasks) {
+                        if (!groupedTasks[t.testRequestId]) groupedTasks[t.testRequestId] = [];
+                        groupedTasks[t.testRequestId].push(t);
+                    }
+                    set({ testTasks: groupedTasks });
+                } catch (e: any) {
+                    set({ error: e.message });
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            createTestTask: async (task) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const currentTasksMap = get().testTasks;
+                    const existingTasks = currentTasksMap[task.testRequestId] || [];
+                    const maxOrder = existingTasks.length > 0 ? Math.max(...existingTasks.map(t => t.orderIndex || 0)) : -1;
+
+                    const newTaskObj = {
+                        ...task,
+                        orderIndex: maxOrder + 1
+                    };
+
+                    const newTask = await storage.createTestTask(newTaskObj);
+                    set(state => {
+                        const currentTasks = state.testTasks[task.testRequestId] || [];
+                        return {
+                            testTasks: {
+                                ...state.testTasks,
+                                [task.testRequestId]: [...currentTasks, newTask]
+                            }
+                        };
+                    });
+                    toast.success('Task created successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to create test task: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateTestTask: async (id, updates) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const currentStore = get();
+                    let targetRequestId: string | null = null;
+                    let existingStoreTask: TestTask | null = null;
+                    let allTasksInReq: TestTask[] = [];
+
+                    for (const reqId in currentStore.testTasks) {
+                        const task = currentStore.testTasks[reqId].find(t => t.id === id);
+                        if (task) {
+                            targetRequestId = reqId;
+                            existingStoreTask = task;
+                            allTasksInReq = currentStore.testTasks[reqId];
+                            break;
+                        }
+                    }
+
+                    if (targetRequestId && existingStoreTask) {
+                        // Pre-calculate dates if dependencies changed
+                        if (updates.dependsOnTaskId !== undefined || updates.dependencyOffsetDays !== undefined) {
+                            const newDependsOnId = updates.dependsOnTaskId !== undefined ? updates.dependsOnTaskId : existingStoreTask.dependsOnTaskId;
+                            const newOffset = updates.dependencyOffsetDays !== undefined ? updates.dependencyOffsetDays : (existingStoreTask.dependencyOffsetDays || 0);
+
+                            if (newDependsOnId && newDependsOnId !== 'none') {
+                                const parent = allTasksInReq.find(t => t.id === newDependsOnId);
+                                if (parent && parent.targetDate && isValid(parseISO(parent.targetDate))) {
+                                    const newStartDateDt = addDays(parseISO(parent.targetDate), newOffset);
+                                    updates.startDate = format(newStartDateDt, 'yyyy-MM-dd');
+
+                                    let newTargetDate = undefined;
+                                    if (existingStoreTask.startDate && existingStoreTask.targetDate) {
+                                        const diff = differenceInDays(parseISO(existingStoreTask.targetDate), parseISO(existingStoreTask.startDate));
+                                        newTargetDate = format(addDays(newStartDateDt, diff), 'yyyy-MM-dd');
+                                    } else if (existingStoreTask.durationHours) {
+                                        const diff = Math.max(1, Math.ceil(existingStoreTask.durationHours / 24)) - 1;
+                                        newTargetDate = format(addDays(newStartDateDt, diff), 'yyyy-MM-dd');
+                                    }
+                                    if (newTargetDate) {
+                                        updates.targetDate = newTargetDate;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    await storage.updateTestTask(id, updates);
+
+                    if (!targetRequestId || !existingStoreTask) return;
+                    let baseTask = { ...existingStoreTask, ...updates };
+
+                    const allTasks = [...currentStore.testTasks[targetRequestId]];
+                    const baseTaskIndex = allTasks.findIndex(t => t.id === id);
+                    if (baseTaskIndex !== -1) {
+                        allTasks[baseTaskIndex] = baseTask;
+                    }
+
+                    const tasksToUpdate: { id: string, updates: Partial<TestTask> }[] = [];
+                    const visitedTaskIds = new Set<string>();
+
+                    const cascadeDates = (parentTask: TestTask) => {
+                        if (!parentTask.targetDate || !isValid(parseISO(parentTask.targetDate))) return;
+
+                        // Prevent infinite loops from circular dependencies
+                        if (visitedTaskIds.has(parentTask.id)) return;
+                        visitedTaskIds.add(parentTask.id);
+
+                        const children = allTasks.filter(t => t.dependsOnTaskId === parentTask.id);
+                        for (const child of children) {
+                            const offset = child.dependencyOffsetDays || 0;
+                            const newStartDateDt = addDays(parseISO(parentTask.targetDate), offset);
+                            const newStartDate = format(newStartDateDt, 'yyyy-MM-dd');
+
+                            if (child.startDate !== newStartDate) {
+                                let newTargetDate = undefined;
+                                if (child.startDate && child.targetDate) {
+                                    const diff = differenceInDays(parseISO(child.targetDate), parseISO(child.startDate));
+                                    newTargetDate = format(addDays(newStartDateDt, diff), 'yyyy-MM-dd');
+                                } else if (child.durationHours) {
+                                    const diff = Math.max(1, Math.ceil(child.durationHours / 24)) - 1;
+                                    newTargetDate = format(addDays(newStartDateDt, diff), 'yyyy-MM-dd');
+                                }
+
+                                const updatePayload: Partial<TestTask> = { startDate: newStartDate };
+                                if (newTargetDate) updatePayload.targetDate = newTargetDate;
+
+                                tasksToUpdate.push({ id: child.id, updates: updatePayload });
+
+                                const childIndex = allTasks.findIndex(t => t.id === child.id);
+                                if (childIndex !== -1) {
+                                    allTasks[childIndex] = { ...allTasks[childIndex], ...updatePayload };
+                                    cascadeDates(allTasks[childIndex]);
+                                }
+                            } else {
+                                // Even if start date didn't change, we should still traverse children to check for circles
+                                cascadeDates(child);
+                            }
+                        }
+                    };
+
+                    if (updates.targetDate !== undefined || updates.startDate !== undefined || updates.dependsOnTaskId !== undefined) {
+                        visitedTaskIds.clear();
+                        cascadeDates(baseTask);
+                    }
+
+                    if (tasksToUpdate.length > 0) {
+                        await Promise.all(tasksToUpdate.map(t => storage.updateTestTask(t.id, t.updates)));
+                    }
+
+                    // Automatic Request Status Evaluation
+                    if (updates.status && targetRequestId) {
+                        const parentRequest = currentStore.testRequests.find(r => r.id === targetRequestId);
+                        if (parentRequest) {
+                            let newRequestStatus = parentRequest.status;
+                            const allTasksNow = allTasks; // baseTask acts as proxy for the changed task
+
+                            // Condition 3: Completed. Are all tasks done?
+                            const allDone = allTasksNow.length > 0 && allTasksNow.every(t => t.status === 'done');
+                            if (allDone) {
+                                newRequestStatus = 'completed';
+                            } else {
+                                // Condition 2: Testing. Did a testing task start?
+                                const hasTestingStarted = allTasksNow.some(t => t.phase === 'testing' && (t.status === 'in_progress' || t.status === 'done'));
+                                if (hasTestingStarted) {
+                                    newRequestStatus = 'testing';
+                                } else if (parentRequest.status === 'completed' || parentRequest.status === 'testing') {
+                                    // If no testing tasks are started/done, but the request was marked as completed or testing,
+                                    // it should fall back to specimen_preparation.
+                                    newRequestStatus = 'specimen_preparation';
+                                }
+                            }
+
+                            if (newRequestStatus !== parentRequest.status) {
+                                await storage.updateTestRequest(targetRequestId, { status: newRequestStatus });
+                                set(state => ({
+                                    testRequests: state.testRequests.map(r => r.id === targetRequestId ? { ...r, status: newRequestStatus as any } : r)
+                                }));
+                            }
+                        }
+                    }
+
+                    set(state => {
+                        const newTasksMap = { ...state.testTasks };
+                        if (targetRequestId) {
+                            newTasksMap[targetRequestId] = allTasks;
+                        }
+                        return { testTasks: newTasksMap };
+                    });
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to update test task: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteTestTask: async (id) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.deleteTestTask(id);
+                    set(state => {
+                        const newTasksMap = { ...state.testTasks };
+                        for (const requestId in newTasksMap) {
+                            newTasksMap[requestId] = newTasksMap[requestId].filter(t => t.id !== id);
+                        }
+                        return { testTasks: newTasksMap };
+                    });
+                    toast.success('Task deleted successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to delete test task: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // Task Templates
+            fetchTaskTemplates: async () => {
+                set({ isLoading: true, error: null });
+                try {
+                    const templates = await storage.getTaskTemplates();
+                    set({ taskTemplates: templates });
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to load task templates: ${e.message}`);
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            createTaskTemplate: async (template) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const created = await storage.createTaskTemplate(template);
+                    set(state => ({ taskTemplates: [...state.taskTemplates, created] }));
+                    toast.success('Task template created successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to create task template: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateTaskTemplate: async (id, updates) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.updateTaskTemplate(id, updates);
+                    set(state => ({
+                        taskTemplates: state.taskTemplates.map(t => t.id === id ? { ...t, ...updates } : t)
+                    }));
+                    toast.success('Task template updated successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to update task template: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteTaskTemplate: async (id) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.deleteTaskTemplate(id);
+                    set(state => ({
+                        taskTemplates: state.taskTemplates.filter(t => t.id !== id)
+                    }));
+                    toast.success('Task template deleted successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to delete task template: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            // Task Template Items
+            fetchTaskTemplateItems: async (templateId) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const items = await storage.getTaskTemplateItems(templateId);
+                    set(state => ({
+                        taskTemplateItems: {
+                            ...state.taskTemplateItems,
+                            [templateId]: items
+                        }
+                    }));
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to load template items: ${e.message}`);
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            createTaskTemplateItem: async (item) => {
+                set({ isLoading: true, error: null });
+                try {
+                    const currentItems = get().taskTemplateItems[item.templateId] || [];
+                    const maxOrder = currentItems.length > 0 ? Math.max(...currentItems.map(i => i.orderIndex || 0)) : -1;
+                    const newItemObj = { ...item, orderIndex: maxOrder + 1 };
+
+                    const created = await storage.createTaskTemplateItem(newItemObj);
+                    set(state => ({
+                        taskTemplateItems: {
+                            ...state.taskTemplateItems,
+                            [item.templateId]: [...(state.taskTemplateItems[item.templateId] || []), created]
+                        }
+                    }));
+                    toast.success('Template item added successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to add template item: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            updateTaskTemplateItem: async (id, updates) => {
+                // To keep state sync simple, we'll just reload the items for that template if we can derive the templateId
+                // Or we update our local cache manually.
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.updateTaskTemplateItem(id, updates);
+                    // Find which template this item belongs to
+                    let foundTemplateId: string | null = null;
+                    const currentItemsMap = get().taskTemplateItems;
+                    for (const [tId, items] of Object.entries(currentItemsMap)) {
+                        if (items.some(i => i.id === id)) {
+                            foundTemplateId = tId;
+                            break;
+                        }
+                    }
+                    if (foundTemplateId) {
+                        set(state => {
+                            const templateItems = state.taskTemplateItems[foundTemplateId!];
+                            return {
+                                taskTemplateItems: {
+                                    ...state.taskTemplateItems,
+                                    [foundTemplateId!]: templateItems.map(i => i.id === id ? { ...i, ...updates } : i).sort((a, b) => a.orderIndex - b.orderIndex)
+                                }
+                            };
+                        });
+                    }
+                    toast.success('Item updated.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to update item: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+            deleteTaskTemplateItem: async (id, templateId) => {
+                set({ isLoading: true, error: null });
+                try {
+                    await storage.deleteTaskTemplateItem(id);
+                    set(state => ({
+                        taskTemplateItems: {
+                            ...state.taskTemplateItems,
+                            [templateId]: (state.taskTemplateItems[templateId] || []).filter(i => i.id !== id)
+                        }
+                    }));
+                    toast.success('Item removed successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to remove item: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
+            },
+
+            applyTemplateToRequest: async (templateId, requestId, startDate) => {
+                set({ isLoading: true, error: null });
+                try {
+                    let items = get().taskTemplateItems[templateId];
+                    if (!items) {
+                        await get().fetchTaskTemplateItems(templateId);
+                        items = get().taskTemplateItems[templateId];
+                    }
+                    if (!items || items.length === 0) {
+                        toast.error("Template has no tasks.");
+                        return;
+                    }
+
+                    const template = get().taskTemplates.find(t => t.id === templateId);
+                    const templatePhase = template?.phase;
+
+                    const currentStoreTasks = get().testTasks[requestId] || [];
+                    let maxOrderIndex = currentStoreTasks.length > 0 ? Math.max(...currentStoreTasks.map(t => t.orderIndex || 0)) : -1;
+
+                    const sortedItems = [...items].sort((a, b) => a.orderIndex - b.orderIndex);
+                    const createdTasksByIndex: Record<number, string> = {};
+
+                    for (const item of sortedItems) {
+                        maxOrderIndex++;
+                        let targetDepTaskId = undefined;
+                        let itemStartDate = startDate;
+                        let itemTargetDate = undefined;
+
+                        if (item.dependsOnItemIndex !== undefined && createdTasksByIndex[item.dependsOnItemIndex]) {
+                            targetDepTaskId = createdTasksByIndex[item.dependsOnItemIndex];
+                        }
+
+                        if (targetDepTaskId) {
+                            const predTask = (get().testTasks[requestId] || []).find(t => t.id === targetDepTaskId);
+                            if (predTask && predTask.targetDate) {
+                                const offset = item.dependencyOffsetDays || 0;
+                                const ds = addDays(parseISO(predTask.targetDate), offset);
+                                itemStartDate = format(ds, 'yyyy-MM-dd');
+                            }
+                        }
+
+                        let diffDays = Math.max(1, Math.ceil(item.durationHours / 24)) - 1;
+                        itemTargetDate = format(addDays(parseISO(itemStartDate), diffDays), 'yyyy-MM-dd');
+
+                        const newTaskPayload = {
+                            testRequestId: requestId,
+                            name: item.name,
+                            durationHours: item.durationHours,
+                            standardDurationHours: item.durationHours,
+                            startDate: itemStartDate,
+                            targetDate: itemTargetDate,
+                            status: 'todo' as const,
+                            dependsOnTaskId: targetDepTaskId,
+                            dependencyOffsetDays: item.dependencyOffsetDays || 0,
+                            orderIndex: maxOrderIndex,
+                            phase: templatePhase
+                        };
+
+                        const created = await storage.createTestTask(newTaskPayload);
+                        createdTasksByIndex[item.orderIndex] = created.id;
+
+                        set(state => ({
+                            testTasks: {
+                                ...state.testTasks,
+                                [requestId]: [...(state.testTasks[requestId] || []), created]
+                            }
+                        }));
+                    }
+                    toast.success('Template applied successfully.');
+                } catch (e: any) {
+                    set({ error: e.message });
+                    toast.error(`Failed to apply template: ${e.message}`);
+                    throw e;
+                } finally {
+                    set({ isLoading: false });
+                }
             }
-
-
         }),
         {
             name: 'material-db-storage',

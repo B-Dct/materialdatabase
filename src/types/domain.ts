@@ -29,6 +29,15 @@ export interface ManufacturingProcess {
     projectIds?: string[]; // Links to assigned projects
 }
 
+export interface ProductionSite {
+    id: string;
+    name: string;
+    description?: string;
+    entryStatus: 'active' | 'archived';
+    layupCount?: number;
+    testCount?: number;
+}
+
 export interface TestMethodPropertyConfig {
     propertyId: string;
     statsTypes: ('mean' | 'range' | 'design')[]; // mean, range (min/max), design (A/B)
@@ -269,7 +278,10 @@ export interface Layup {
     status: EntityStatus;
 
     // New Fields
-    productionSite?: string;
+    processNumber?: string;
+    reference?: string;
+    initiatingProjectId?: string;
+    productionSiteId?: string;
     restrictionReason?: string;
 
     // Explicit Reference Definition
@@ -292,6 +304,25 @@ export interface Layup {
 
     createdAt: string;
     createdBy: string;
+}
+
+// --- Templates ---
+export interface TestTaskTemplate {
+    id: string;
+    name: string;
+    description?: string;
+    phase: 'specimen_preparation' | 'testing';
+    createdAt: string;
+}
+
+export interface TestTaskTemplateItem {
+    id: string;
+    templateId: string;
+    name: string;
+    durationHours: number;
+    dependsOnItemIndex?: number;
+    dependencyOffsetDays?: number;
+    orderIndex: number;
 }
 
 export interface ComponentConfig {
@@ -338,6 +369,12 @@ export interface Assembly {
     assignedProfileIds?: string[]; // IDs of RequirementProfiles
     measurements: Measurement[];
     allowables?: Allowable[]; // Derived allowables
+
+    // New Fields
+    processNumber?: string;
+    reference?: string;
+    initiatingProjectId?: string;
+    productionSiteId?: string;
 
     createdAt: string;
     version: number;
@@ -482,13 +519,37 @@ export interface AnalysisCartItem {
 // Lab Test Requests
 // ------------------------------------------------------------------
 
+export interface LabTechnician {
+    id: string;
+    name: string;
+    createdAt: string;
+}
+
+export interface TestTask {
+    id: string;
+    testRequestId: string;
+    name: string;
+    durationHours: number;
+    startDate?: string;
+    targetDate?: string;
+    status: 'todo' | 'in_progress' | 'done' | 'canceled';
+    assigneeId?: string;
+    dependsOnTaskId?: string;
+    dependencyOffsetDays?: number;
+    orderIndex?: number;
+    phase?: 'specimen_preparation' | 'testing';
+    standardDurationHours?: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface TestRequest {
     id: string;
     entityType: 'material' | 'layup' | 'assembly';
     entityId: string;
     entityName: string;
     requesterName: string;
-    status: 'requested' | 'in_progress' | 'completed' | 'canceled';
+    status: 'requested' | 'specimen_preparation' | 'testing' | 'completed' | 'canceled';
     orderNumber?: string;
     propertyId: string;
     propertyName: string;
@@ -497,5 +558,8 @@ export interface TestRequest {
     numVariants: number;
     numSpecimens: number;
     variantDescription?: string;
+    assigneeId?: string;
+    startDate?: string;
+    targetDate?: string;
     createdAt: string;
 }

@@ -20,7 +20,8 @@ import type {
     ProjectMaterialList,
     ProjectProcessList,
     WorkPackageRevision,
-    AssignableEntityType
+    AssignableEntityType,
+    ProductionSite
 } from '@/types/domain';
 
 export interface MaterialUsageRecord {
@@ -104,6 +105,12 @@ export interface StorageRepository {
     archiveMaterialType(type: string): Promise<void>;
     restoreMaterialType(type: string): Promise<void>;
 
+    getProductionSites(includeArchived?: boolean): Promise<ProductionSite[]>;
+    createProductionSite(site: Omit<ProductionSite, 'id'>): Promise<ProductionSite>;
+    updateProductionSite(id: string, updates: Partial<ProductionSite>): Promise<void>;
+    archiveProductionSite(id: string): Promise<void>;
+    restoreProductionSite(id: string): Promise<void>;
+
     // Specifications
     getSpecifications(entityId: string, entityType?: 'material' | 'layup' | 'assembly'): Promise<MaterialSpecification[]>;
     createSpecification(spec: Omit<MaterialSpecification, 'createdAt' | 'id'> & { id?: string }): Promise<void>;
@@ -159,9 +166,35 @@ export interface StorageRepository {
 
     // Queries
     getMaterialUsage(materialId: string): Promise<MaterialUsageRecord[]>;
+    getLayupProjectUsage(layupId: string): Promise<MaterialUsageRecord[]>;
+    getAssemblyProjectUsage(assemblyId: string): Promise<MaterialUsageRecord[]>;
 
     // Lab Test Requests
     getTestRequests(): Promise<import('@/types/domain').TestRequest[]>;
     createTestRequest(request: Omit<import('@/types/domain').TestRequest, 'id' | 'createdAt' | 'updatedAt'>): Promise<import('@/types/domain').TestRequest>;
     updateTestRequest(id: string, updates: Partial<import('@/types/domain').TestRequest>): Promise<void>;
+
+    // Lab Technicians
+    getLabTechnicians(): Promise<import('@/types/domain').LabTechnician[]>;
+    createLabTechnician(name: string): Promise<import('@/types/domain').LabTechnician>;
+    deleteLabTechnician(id: string): Promise<void>;
+
+    // Test Tasks
+    getTestTasks(testRequestId: string): Promise<import('@/types/domain').TestTask[]>;
+    getAllTestTasks(): Promise<import('@/types/domain').TestTask[]>;
+    createTestTask(task: Omit<import('@/types/domain').TestTask, 'id' | 'createdAt' | 'updatedAt'>): Promise<import('@/types/domain').TestTask>;
+    updateTestTask(id: string, updates: Partial<import('@/types/domain').TestTask>): Promise<void>;
+    deleteTestTask(id: string): Promise<void>;
+
+    // Task Templates
+    getTaskTemplates(): Promise<import('@/types/domain').TestTaskTemplate[]>;
+    createTaskTemplate(template: Omit<import('@/types/domain').TestTaskTemplate, 'id' | 'createdAt'>): Promise<import('@/types/domain').TestTaskTemplate>;
+    updateTaskTemplate(id: string, updates: Partial<import('@/types/domain').TestTaskTemplate>): Promise<void>;
+    deleteTaskTemplate(id: string): Promise<void>;
+
+    // Task Template Items
+    getTaskTemplateItems(templateId: string): Promise<import('@/types/domain').TestTaskTemplateItem[]>;
+    createTaskTemplateItem(item: Omit<import('@/types/domain').TestTaskTemplateItem, 'id'>): Promise<import('@/types/domain').TestTaskTemplateItem>;
+    updateTaskTemplateItem(id: string, updates: Partial<import('@/types/domain').TestTaskTemplateItem>): Promise<void>;
+    deleteTaskTemplateItem(id: string): Promise<void>;
 }

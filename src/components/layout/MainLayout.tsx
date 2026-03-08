@@ -2,15 +2,21 @@ import { Outlet, Link, useLocation } from "react-router-dom";
 import { LayoutDashboard, Layers as LayersIcon, Atom, Settings, ClipboardList, Menu, Activity, FlaskConical, Nut, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { DevRoleSwitcher } from "@/components/auth/DevRoleSwitcher";
+import { useAppStore } from "@/lib/store";
 
-const SidebarItem = ({ href, icon: Icon, label, active }: { href: string; icon: any; label: string; active: boolean }) => (
-    <Link to={href}>
+const SidebarItem = ({ href, icon: Icon, label, active, badge }: { href: string; icon: any; label: string; active: boolean; badge?: number }) => (
+    <Link to={href} className="w-full block">
         <Button variant={active ? "secondary" : "ghost"} className={cn("w-full justify-start gap-2", active && "bg-muted")}>
             <Icon className="h-4 w-4" />
-            {label}
+            <span className="flex-1 text-left">{label}</span>
+            {badge !== undefined && badge > 0 && (
+                <span className="bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-5 text-center">
+                    {badge}
+                </span>
+            )}
         </Button>
     </Link>
 );
@@ -20,11 +26,20 @@ export function MainLayout() {
     const location = useLocation();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+    const { testRequests, fetchTestRequests } = useAppStore();
+
+    useEffect(() => {
+        if (testRequests.length === 0) fetchTestRequests();
+    }, [fetchTestRequests, testRequests.length]);
+
+    const newRequestsCount = testRequests.filter(req => req.status === 'requested').length;
+
     interface NavItem {
         href: string;
         label: string;
         icon: any;
         permission?: string;
+        badge?: number;
     }
 
     interface NavGroup {
@@ -60,7 +75,7 @@ export function MainLayout() {
             title: "Lab",
             items: [
                 { href: "/quality/analysis", label: "Analysis", icon: Activity },
-                { href: "/quality/requests", label: "Requests", icon: ClipboardList },
+                { href: "/quality/requests", label: "Requests", icon: ClipboardList, badge: newRequestsCount },
                 { href: "/quality/measurements", label: "Measurements", icon: FlaskConical },
                 { href: "/quality/test-methods", label: "Test Methods", icon: FlaskConical },
                 { href: "/quality/laboratories", label: "Laboratories", icon: FlaskConical },
@@ -100,6 +115,7 @@ export function MainLayout() {
                                         icon={item.icon}
                                         label={item.label}
                                         active={location.pathname === item.href || (item.href !== '/' && location.pathname.startsWith(item.href))}
+                                        badge={item.badge}
                                     />
                                 )
                             })}
@@ -150,10 +166,15 @@ export function MainLayout() {
                             {navGroups.flatMap(g => g.items).map((item) => {
                                 if (item.permission && !can(item.permission as any)) return null;
                                 return (
-                                    <Link key={item.href} to={item.href} onClick={() => setMobileMenuOpen(false)}>
+                                    <Link key={item.href} to={item.href} onClick={() => setMobileMenuOpen(false)} className="w-full block">
                                         <Button variant="ghost" className="w-full justify-start gap-2">
                                             <item.icon className="h-4 w-4" />
-                                            {item.label}
+                                            <span className="flex-1 text-left">{item.label}</span>
+                                            {item.badge !== undefined && item.badge > 0 && (
+                                                <span className="bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-5 text-center">
+                                                    {item.badge}
+                                                </span>
+                                            )}
                                         </Button>
                                     </Link>
                                 )

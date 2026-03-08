@@ -3,13 +3,14 @@ import { useParams } from "react-router-dom";
 import { useAppStore } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil, Archive, Trash2, FlaskConical } from "lucide-react";
+import { ArrowLeft, Box, LayoutGrid, Scale, BarChart2, ShieldCheck, FileText, Ruler, Pencil, Archive, Trash2, FlaskConical, Briefcase } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
 import { AssemblyStackEditor } from "./AssemblyStackEditor";
 
 import { AssemblyStatistics } from "./AssemblyStatistics";
+import { AssemblyUsage } from "./AssemblyUsage";
 import { AllowableManager } from "@/features/quality/AllowableManager";
 import { EntityStandardsManager } from "@/features/quality/EntityStandardsManager";
 
@@ -188,6 +189,9 @@ export function AssemblyDetailPage() {
                                     <Ruler className="h-4 w-4 mr-2" /> Measurements
                                 </TabsTrigger>
                             )}
+                            <TabsTrigger value="usage" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
+                                <Briefcase className="h-4 w-4 mr-2" /> Usage
+                            </TabsTrigger>
                             <TabsTrigger value="statistics" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-0">
                                 <BarChart2 className="h-4 w-4 mr-2" /> Statistics
                             </TabsTrigger>
@@ -262,6 +266,13 @@ export function AssemblyDetailPage() {
                                 />
                             </TabsContent>
                         )}
+
+                        <TabsContent value="usage" className="h-full m-0 space-y-4">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-medium">Project Usage</h3>
+                            </div>
+                            <AssemblyUsage assembly={assembly} />
+                        </TabsContent>
 
                         <TabsContent value="statistics" className="h-full m-0">
                             <AssemblyStatistics assembly={assembly} />

@@ -16,6 +16,7 @@ import { CreateAssemblyPage } from '@/features/assemblies/CreateAssemblyPage';
 import { DataImportPage } from '@/features/imports/DataImportPage';
 import { RequirementProfileListPage } from '@/features/quality/RequirementProfileListPage';
 import { TestRequestsPage } from '@/features/quality/TestRequestsPage';
+import { TestRequestScheduler } from '@/features/quality/TestRequestScheduler';
 import { CreateTestRequestPage } from '@/features/quality/CreateTestRequestPage';
 import { MeasurementsPage } from '@/features/quality/MeasurementsPage';
 import { AnalysisDashboard } from '@/features/analysis/AnalysisDashboard';
@@ -68,6 +69,7 @@ function App() {
             <Route path="quality/test-run" element={<CreateTestRunPage />} />
             <Route path="quality/test-methods" element={<TestMethodsView />} /> {/* Added route */}
             <Route path="quality/requests" element={<TestRequestsPage />} />
+            <Route path="quality/requests/:id/schedule" element={<TestRequestScheduler />} />
             <Route path="quality/requests/new/:entityType/:entityId" element={<CreateTestRequestPage />} />
             <Route path="measurements/new" element={<CreateTestRunPage />} />
             <Route path="measurements/:id" element={<MeasurementDetailPage />} />
